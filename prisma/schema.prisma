@@ -1,0 +1,606 @@
+// ============================================================================
+// PRISMA SCHEMA - SISTEM ABSENSI DAN PENGAJUAN SURAT (IMPROVED)
+// Database: PostgreSQL with Supabase
+// Authentication: Next-Auth
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// NEXT-AUTH REQUIRED TABLES
+// ============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions Json     @default("{}")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@map("roles")
+}
+
+model Department {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  name               String   @unique // ✅ Added unique constraint
+  description        String?
+  parentDepartmentId String?  @map("parent_department_id")
+  headUserId         String?  @unique @map("head_user_id") // ✅ Made unique - one head per department
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  parentDepartment  Department?        @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  childDepartments  Department[]       @relation("DepartmentHierarchy")
+  headUser          User?              @relation("DepartmentHead", fields: [headUserId], references: [id])
+  users             User[]             @relation("DepartmentUsers")
+  approvalWorkflows ApprovalWorkflow[]
+
+  @@map("departments")
+}
+
+model User {
+  id            String     @id @default(cuid())
+  nip           String?    @unique
+  name          String?
+  email         String     @unique
+  emailVerified DateTime?  @map("email_verified")
+  image         String?
+  passwordHash  String?    @map("password_hash")
+  phone         String?    @unique // ✅ Added unique constraint
+  birthDate     DateTime?  @map("birth_date") @db.Date
+  gender        Gender?
+  address       String?
+  hireDate      DateTime?  @map("hire_date") @db.Date
+  status        UserStatus @default(ACTIVE)
+  departmentId  String?    @map("department_id")
+  roleId        String?    @map("role_id")
+  latitude      Decimal?   @db.Decimal(10, 8)
+  longitude     Decimal?   @db.Decimal(11, 8)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  lastLogin     DateTime?  @map("last_login")
+
+  // Relations
+  accounts         Account[]
+  sessions         Session[]
+  role             Role?       @relation(fields: [roleId], references: [id])
+  department       Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
+  headOfDepartment Department? @relation("DepartmentHead") // ✅ Changed to singular
+
+  // Attendance
+  attendances   Attendance[]
+  workSchedules WorkSchedule[]
+
+  // Requests
+  leaveRequests      LeaveRequest[]
+  permissionRequests PermissionRequest[]
+  workLetters        WorkLetter[]
+
+  // Approvals
+  approvals                   Approval[]
+  leaveRequestsToApprove      LeaveRequest[]      @relation("LeaveRequestApprover")
+  permissionRequestsToApprove PermissionRequest[] @relation("PermissionRequestApprover")
+  workLettersToApprove        WorkLetter[]        @relation("WorkLetterApprover")
+
+  // Notifications & Logs
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  userSessions      UserSession[]
+  userLeaveBalances UserLeaveBalance[]
+
+  @@index([email])
+  @@index([nip])
+  @@index([departmentId, status])
+  @@map("users")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Gender {
+  MALE   @map("male") // ✅ More descriptive mapping
+  FEMALE @map("female")
+
+  @@map("gender")
+}
+
+enum UserStatus {
+  ACTIVE     @map("active")
+  INACTIVE   @map("inactive")
+  TERMINATED @map("terminated")
+
+  @@map("user_status")
+}
+
+enum AttendanceStatus {
+  PRESENT  @map("present")
+  LATE     @map("late")
+  ABSENT   @map("absent")
+  HALF_DAY @map("half_day")
+
+  @@map("attendance_status")
+}
+
+enum DayOfWeek {
+  MONDAY    @map("monday")
+  TUESDAY   @map("tuesday")
+  WEDNESDAY @map("wednesday")
+  THURSDAY  @map("thursday")
+  FRIDAY    @map("friday")
+  SATURDAY  @map("saturday")
+  SUNDAY    @map("sunday")
+
+  @@map("day_of_week")
+}
+
+enum LeaveType {
+  ANNUAL    @map("annual")
+  SICK      @map("sick")
+  MATERNITY @map("maternity")
+  PATERNITY @map("paternity")
+  EMERGENCY @map("emergency")
+  UNPAID    @map("unpaid")
+
+  @@map("leave_type")
+}
+
+enum PermissionType {
+  PERSONAL @map("personal")
+  MEDICAL  @map("medical")
+  FAMILY   @map("family")
+  OFFICIAL @map("official")
+  OTHERS   @map("others")
+
+  @@map("permission_type")
+}
+
+enum WorkLetterType {
+  ASSIGNMENT @map("assignment")
+  TRAVEL     @map("travel")
+  TRAINING   @map("training")
+  OFFICIAL   @map("official")
+  OTHERS     @map("others")
+
+  @@map("work_letter_type")
+}
+
+enum RequestStatus {
+  PENDING   @map("pending")
+  APPROVED  @map("approved")
+  REJECTED  @map("rejected")
+  CANCELLED @map("cancelled")
+
+  @@map("request_status")
+}
+
+enum ApprovalStatus {
+  PENDING  @map("pending")
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@map("approval_status")
+}
+
+enum DocumentType {
+  LEAVE       @map("leave")
+  PERMISSION  @map("permission")
+  WORK_LETTER @map("work_letter")
+
+  @@map("document_type")
+}
+
+enum NotificationType {
+  INFO    @map("info")
+  WARNING @map("warning")
+  SUCCESS @map("success")
+  ERROR   @map("error")
+
+  @@map("notification_type")
+}
+
+enum NotificationStatus {
+  UNREAD @map("unread")
+  READ   @map("read")
+
+  @@map("notification_status")
+}
+
+// ============================================================================
+// ATTENDANCE SYSTEM
+// ============================================================================
+
+model OfficeLocation {
+  id           String   @id @default(cuid())
+  name         String   @unique // ✅ Added unique constraint
+  code         String   @unique // ✅ Added code field for easier reference
+  address      String?
+  latitude     Decimal  @db.Decimal(10, 8)
+  longitude    Decimal  @db.Decimal(11, 8)
+  radiusMeters Int      @default(100) @map("radius_meters")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // ✅ Added relations
+  workSchedules WorkSchedule[]
+  attendances   Attendance[]
+
+  @@map("office_locations")
+}
+
+model WorkSchedule {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  officeLocationId String?   @map("office_location_id") // ✅ Added office location relation
+  dayOfWeek        DayOfWeek @map("day_of_week")
+  startTime        DateTime  @map("start_time") @db.Time
+  endTime          DateTime  @map("end_time") @db.Time
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  officeLocation OfficeLocation? @relation(fields: [officeLocationId], references: [id])
+
+  @@unique([userId, dayOfWeek])
+  @@index([userId])
+  @@map("work_schedules")
+}
+
+model Attendance {
+  id                  String           @id @default(cuid())
+  userId              String           @map("user_id")
+  officeLocationId    String?          @map("office_location_id") // ✅ Added office location relation
+  attendanceDate      DateTime         @map("attendance_date") @db.Date
+  checkInTime         DateTime?        @map("check_in_time") @db.Time
+  checkOutTime        DateTime?        @map("check_out_time") @db.Time
+  checkInLatitude     Decimal?         @map("check_in_latitude") @db.Decimal(10, 8)
+  checkInLongitude    Decimal?         @map("check_in_longitude") @db.Decimal(11, 8)
+  checkOutLatitude    Decimal?         @map("check_out_latitude") @db.Decimal(10, 8)
+  checkOutLongitude   Decimal?         @map("check_out_longitude") @db.Decimal(11, 8)
+  checkInAddress      String?          @map("check_in_address")
+  checkOutAddress     String?          @map("check_out_address")
+  status              AttendanceStatus @default(PRESENT)
+  notes               String?
+  workingHoursMinutes Int              @default(0) @map("working_hours_minutes")
+  isValidLocation     Boolean          @default(true) @map("is_valid_location") // ✅ Added validation field
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  officeLocation OfficeLocation? @relation(fields: [officeLocationId], references: [id])
+
+  @@unique([userId, attendanceDate])
+  @@index([userId, attendanceDate])
+  @@index([attendanceDate, status])
+  @@index([officeLocationId])
+  @@map("attendance")
+}
+
+// ============================================================================
+// LEAVE MANAGEMENT
+// ============================================================================
+
+model LeaveTypeConfig {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  code             String   @unique // ✅ Added code field
+  description      String?
+  maxDaysPerYear   Int      @default(12) @map("max_days_per_year")
+  requiresApproval Boolean  @default(true) @map("requires_approval") // ✅ Added approval requirement
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  userLeaveBalances UserLeaveBalance[]
+
+  @@map("leave_type_configs")
+}
+
+model UserLeaveBalance {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  leaveTypeId   String   @map("leave_type_id")
+  year          Int
+  allocatedDays Int      @default(0) @map("allocated_days")
+  usedDays      Int      @default(0) @map("used_days")
+  remainingDays Int      @default(0) @map("remaining_days")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType LeaveTypeConfig @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([userId, leaveTypeId, year])
+  @@index([userId, year])
+  @@map("user_leave_balances")
+}
+
+// ============================================================================
+// DOCUMENT REQUESTS
+// ============================================================================
+
+model LeaveRequest {
+  id                String        @id @default(cuid())
+  userId            String        @map("user_id")
+  leaveType         LeaveType     @map("leave_type")
+  startDate         DateTime      @map("start_date") @db.Date
+  endDate           DateTime      @map("end_date") @db.Date
+  totalDays         Int           @map("total_days")
+  reason            String
+  description       String?
+  attachmentFile    String?       @map("attachment_file")
+  status            RequestStatus @default(PENDING)
+  currentApproverId String?       @map("current_approver_id")
+  rejectionReason   String?       @map("rejection_reason")
+  submittedAt       DateTime      @default(now()) @map("submitted_at")
+  approvedAt        DateTime?     @map("approved_at")
+  rejectedAt        DateTime?     @map("rejected_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentApprover User?      @relation("LeaveRequestApprover", fields: [currentApproverId], references: [id])
+  approvals       Approval[] @relation("LeaveRequestApprovals") // ✅ Named relation
+
+  @@index([userId, status])
+  @@index([currentApproverId])
+  @@index([startDate, endDate])
+  @@index([status, submittedAt])
+  @@map("leave_requests")
+}
+
+model PermissionRequest {
+  id                String         @id @default(cuid())
+  userId            String         @map("user_id")
+  permissionType    PermissionType @map("permission_type")
+  permissionDate    DateTime       @map("permission_date") @db.Date
+  startTime         DateTime       @map("start_time") @db.Time
+  endTime           DateTime       @map("end_time") @db.Time
+  reason            String
+  description       String?
+  attachmentFile    String?        @map("attachment_file")
+  status            RequestStatus  @default(PENDING)
+  currentApproverId String?        @map("current_approver_id")
+  rejectionReason   String?        @map("rejection_reason")
+  submittedAt       DateTime       @default(now()) @map("submitted_at")
+  approvedAt        DateTime?      @map("approved_at")
+  rejectedAt        DateTime?      @map("rejected_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentApprover User?      @relation("PermissionRequestApprover", fields: [currentApproverId], references: [id])
+  approvals       Approval[] @relation("PermissionRequestApprovals") // ✅ Named relation
+
+  @@index([userId, status])
+  @@index([permissionDate])
+  @@index([status, submittedAt])
+  @@map("permission_requests")
+}
+
+model WorkLetter {
+  id                String         @id @default(cuid())
+  userId            String         @map("user_id")
+  letterType        WorkLetterType @map("letter_type")
+  letterNumber      String?        @map("letter_number")
+  subject           String
+  content           String
+  effectiveDate     DateTime       @map("effective_date") @db.Date
+  expiryDate        DateTime?      @map("expiry_date") @db.Date
+  attachmentFile    String?        @map("attachment_file")
+  status            RequestStatus  @default(PENDING)
+  currentApproverId String?        @map("current_approver_id")
+  rejectionReason   String?        @map("rejection_reason")
+  submittedAt       DateTime       @default(now()) @map("submitted_at")
+  approvedAt        DateTime?      @map("approved_at")
+  rejectedAt        DateTime?      @map("rejected_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentApprover User?      @relation("WorkLetterApprover", fields: [currentApproverId], references: [id])
+  approvals       Approval[] @relation("WorkLetterApprovals") // ✅ Named relation
+
+  @@index([userId, status])
+  @@index([effectiveDate])
+  @@index([status, submittedAt])
+  @@map("work_letters")
+}
+
+// ============================================================================
+// APPROVAL WORKFLOW - IMPROVED
+// ============================================================================
+
+model ApprovalWorkflow {
+  id            String       @id @default(cuid())
+  name          String       @unique // ✅ Added unique constraint
+  documentType  DocumentType @map("document_type")
+  departmentId  String?      @map("department_id")
+  approvalSteps Json         @map("approval_steps")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@index([documentType, departmentId])
+  @@map("approval_workflows")
+}
+
+// ✅ FIXED: Separated approval relations to avoid conflicts
+model Approval {
+  id           String         @id @default(cuid())
+  documentType DocumentType   @map("document_type")
+  documentId   String         @map("document_id")
+  approverId   String         @map("approver_id")
+  stepOrder    Int            @map("step_order")
+  status       ApprovalStatus @default(PENDING)
+  comments     String?
+  approvedAt   DateTime?      @map("approved_at")
+  rejectedAt   DateTime?      @map("rejected_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  approver User @relation(fields: [approverId], references: [id])
+
+  // Foreign key fields for conditional relations
+  leaveRequestId      String? @map("leave_request_id")
+  permissionRequestId String? @map("permission_request_id")
+  workLetterId        String? @map("work_letter_id")
+
+  // ✅ Fixed: Conditional relations based on documentType
+  leaveRequest      LeaveRequest?      @relation("LeaveRequestApprovals", fields: [leaveRequestId], references: [id], map: "approval_leave_request_fkey")
+  permissionRequest PermissionRequest? @relation("PermissionRequestApprovals", fields: [permissionRequestId], references: [id], map: "approval_permission_request_fkey")
+  workLetter        WorkLetter?        @relation("WorkLetterApprovals", fields: [workLetterId], references: [id], map: "approval_work_letter_fkey")
+
+  @@index([approverId, status])
+  @@index([documentType, documentId])
+  @@index([documentId, stepOrder])
+  @@map("approvals")
+}
+
+// ============================================================================
+// NOTIFICATION SYSTEM
+// ============================================================================
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String             @map("user_id")
+  title     String
+  message   String
+  type      NotificationType   @default(INFO)
+  status    NotificationStatus @default(UNREAD)
+  data      Json?
+  readAt    DateTime?          @map("read_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// SYSTEM LOGS & SESSIONS
+// ============================================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  action    String
+  tableName String   @map("table_name")
+  recordId  String?  @map("record_id")
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([tableName, action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model UserSession {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  sessionToken String    @unique @map("session_token")
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  loginAt      DateTime  @default(now()) @map("login_at")
+  lastActivity DateTime  @default(now()) @map("last_activity")
+  logoutAt     DateTime? @map("logout_at")
+  isActive     Boolean   @default(true) @map("is_active")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([sessionToken])
+  @@index([lastActivity])
+  @@map("user_sessions")
+}
+
+// ============================================================================
+// SYSTEM CONFIGURATION
+// ============================================================================
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String?
+  description String?
+  dataType    String   @default("string") @map("data_type")
+  category    String   @default("general") // ✅ Added category for grouping
+  isEditable  Boolean  @default(true) @map("is_editable") // ✅ Some settings shouldn't be editable
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("system_settings")
+}
