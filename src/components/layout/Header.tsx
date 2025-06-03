@@ -9,7 +9,6 @@ import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Menu, Transition } from '@headlessui/react'
 import {
-    Bars3Icon,
     BellIcon,
     ChevronDownIcon,
     UserCircleIcon,
@@ -18,15 +17,15 @@ import {
 } from '@heroicons/react/24/outline'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useAuth } from '@/hooks/useAuth'
 import { useNotifications } from '@/hooks/useNotifications'
 
 interface HeaderProps {
-    onMenuClick?: () => void
-    sidebarOpen?: boolean
+    // No longer need onMenuClick and sidebarOpen props
 }
 
-export default function Header({ onMenuClick, sidebarOpen }: HeaderProps) {
+export default function Header({}: HeaderProps) {
     const router = useRouter()
     const { user, logout, getUserInitials, getUserDisplayName } = useAuth()
     const { notifications, markAsRead } = useNotifications()
@@ -36,20 +35,7 @@ export default function Header({ onMenuClick, sidebarOpen }: HeaderProps) {
             <div className="px-4 sm:px-6 lg:px-8">
                 <div className="flex h-16 justify-between items-center">
                     <div className="flex items-center min-w-0">
-                        {onMenuClick && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="lg:hidden mr-3 hover:bg-gray-100"
-                                onClick={onMenuClick}
-                                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-                            >
-                                <span className="sr-only">
-                                    {sidebarOpen ? "Close sidebar" : "Open sidebar"}
-                                </span>
-                                <Bars3Icon className="h-6 w-6" aria-hidden="true" />
-                            </Button>
-                        )}
+                        <SidebarTrigger className="mr-3" />
 
                         {/* Page Title - Responsive */}
                         <div className="hidden sm:block lg:hidden">

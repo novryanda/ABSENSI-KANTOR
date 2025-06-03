@@ -6,6 +6,7 @@
 import { IAttendanceRepository, UpdateAttendanceData } from '@/domain/repositories/IAttendanceRepository'
 import { ILocationValidationService } from '@/domain/services/ILocationValidationService'
 import { AttendanceAuditService } from '@/infrastructure/services/AttendanceAuditService'
+import { getAttendanceDate } from '@/utils/dateUtils'
 
 export interface CheckOutWithLocationValidationRequest {
   userId: string
@@ -38,6 +39,18 @@ export interface CheckOutWithLocationValidationResponse {
     }
   }
   error?: string
+  locationValidation?: {
+    isValid: boolean
+    nearestOfficeLocation?: {
+      id: string
+      name: string
+      code: string
+      distance: number
+    }
+    distance?: number
+    allowedRadius?: number
+    errorMessage?: string
+  }
 }
 
 export class CheckOutWithLocationValidation {
@@ -59,7 +72,9 @@ export class CheckOutWithLocationValidation {
       }
 
       // Check if user has checked in today
-      const today = new Date()
+      // CRITICAL: Use normalized date for consistency
+      const today = getAttendanceDate()
+      console.log('📅 CheckOut - Using normalized today date:', today.toISOString())
       const todayAttendance = await this.attendanceRepository.findByUserAndDate(request.userId, today)
       
       if (!todayAttendance) {
@@ -106,8 +121,57 @@ export class CheckOutWithLocationValidation {
             request.toleranceMeters
           )
         }
-        
+
         isValidLocation = locationValidation.isValid
+
+        // CRITICAL: Prevent check-out if location is invalid
+        if (!isValidLocation) {
+          console.log('❌ Location validation failed - preventing check-out submission')
+
+          // Log failed attempt for audit purposes
+          if (this.auditService) {
+            try {
+              await this.auditService.logFailedCheckOutAttempt(
+                request.userId,
+                {
+                  attendanceDate: today, // Use the same normalized date
+                  latitude: request.latitude,
+                  longitude: request.longitude,
+                  address: request.address,
+                  failureReason: 'INVALID_LOCATION',
+                  locationValidation
+                },
+                request.userId,
+                request.ipAddress,
+                request.userAgent
+              )
+              console.log('✅ Failed check-out attempt logged for audit')
+            } catch (auditError) {
+              console.error('⚠️ Failed to log failed check-out attempt:', auditError)
+            }
+          }
+
+          // Return detailed error message in Indonesian
+          const nearestLocation = locationValidation.nearestOfficeLocation
+          const distance = locationValidation.distance
+          const allowedRadius = locationValidation.allowedRadius
+
+          let errorMessage = 'Anda tidak dapat melakukan absensi pulang karena berada di luar radius lokasi kantor yang terdaftar'
+
+          if (nearestLocation && distance && allowedRadius) {
+            errorMessage = `Anda tidak dapat melakukan absensi pulang karena berada di luar radius lokasi kantor yang terdaftar. Lokasi terdekat: ${nearestLocation.name} (Jarak: ${distance}m, Radius maksimal: ${allowedRadius + (request.toleranceMeters || 0)}m)`
+          } else if (locationValidation.errorMessage) {
+            errorMessage = locationValidation.errorMessage
+          }
+
+          return {
+            success: false,
+            error: errorMessage,
+            locationValidation
+          }
+        }
+
+        console.log('✅ Location validation passed for check-out')
       }
 
       // Calculate working hours
@@ -115,6 +179,14 @@ export class CheckOutWithLocationValidation {
         todayAttendance.checkInTime,
         checkOutTime
       )
+
+      // Debug logging for working hours calculation
+      console.log('⏰ Working hours calculation:', {
+        checkInTime: todayAttendance.checkInTime.toISOString(),
+        checkOutTime: checkOutTime.toISOString(),
+        calculatedMinutes: workingHoursMinutes,
+        calculatedHours: (workingHoursMinutes / 60).toFixed(2)
+      })
 
       // Update attendance record
       const updateData: UpdateAttendanceData = {

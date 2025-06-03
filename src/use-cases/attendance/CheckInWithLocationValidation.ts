@@ -41,6 +41,18 @@ export interface CheckInWithLocationValidationResponse {
     status: string
   }
   error?: string
+  locationValidation?: {
+    isValid: boolean
+    nearestOfficeLocation?: {
+      id: string
+      name: string
+      code: string
+      distance: number
+    }
+    distance?: number
+    allowedRadius?: number
+    errorMessage?: string
+  }
 }
 
 export class CheckInWithLocationValidation {
@@ -103,6 +115,56 @@ export class CheckInWithLocationValidation {
         )
       }
       console.log('📍 Location validation result:', JSON.stringify(locationValidation, null, 2))
+
+      // CRITICAL: Prevent attendance submission if location is invalid
+      if (!locationValidation.isValid) {
+        console.log('❌ Location validation failed - preventing attendance submission')
+
+        // Log failed attempt for audit purposes
+        if (this.auditService) {
+          try {
+            await this.auditService.logFailedCheckInAttempt(
+              request.userId,
+              {
+                attendanceDate: today,
+                latitude: request.latitude,
+                longitude: request.longitude,
+                address: request.address,
+                officeLocationId: request.officeLocationId || undefined,
+                failureReason: 'INVALID_LOCATION',
+                locationValidation
+              },
+              request.userId,
+              request.ipAddress,
+              request.userAgent
+            )
+            console.log('✅ Failed check-in attempt logged for audit')
+          } catch (auditError) {
+            console.error('⚠️ Failed to log failed check-in attempt:', auditError)
+          }
+        }
+
+        // Return detailed error message in Indonesian
+        const nearestLocation = locationValidation.nearestOfficeLocation
+        const distance = locationValidation.distance
+        const allowedRadius = locationValidation.allowedRadius
+
+        let errorMessage = 'Anda tidak dapat melakukan absensi karena berada di luar radius lokasi kantor yang terdaftar'
+
+        if (nearestLocation && distance && allowedRadius) {
+          errorMessage = `Anda tidak dapat melakukan absensi karena berada di luar radius lokasi kantor yang terdaftar. Lokasi terdekat: ${nearestLocation.name} (Jarak: ${distance}m, Radius maksimal: ${allowedRadius + (request.toleranceMeters || 0)}m)`
+        } else if (locationValidation.errorMessage) {
+          errorMessage = locationValidation.errorMessage
+        }
+
+        return {
+          success: false,
+          error: errorMessage,
+          locationValidation
+        }
+      }
+
+      console.log('✅ Location validation passed - proceeding with attendance creation')
 
       // Determine attendance status based on location validation and time
       const checkInTime = new Date()

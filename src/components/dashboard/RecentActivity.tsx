@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils'
 import { ActivityItem, RecentRequest, AttendanceTrend } from '@/types/domain'
 import { RequestStatus, AttendanceStatus } from '@prisma/client'
 import { generateAttendanceKey, generateRequestKey, validateUniqueKeys, debugKeys } from '@/utils/keyUtils'
-import { formatWorkingHours } from '@/utils/dateUtils'
+import { formatWorkingHours, getAttendanceDate, parseAttendanceDate, formatRelativeTime, getDisplayWorkingMinutes } from '@/utils/dateUtils'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 
 interface RecentActivityProps {
@@ -70,10 +70,65 @@ function RecentActivityComponent({
       const safeAttendanceTrend = Array.isArray(attendanceTrend) ? attendanceTrend : []
       console.log('🔍 Processing attendance trend:', {
         count: safeAttendanceTrend.length,
-        sample: safeAttendanceTrend[0]
+        sample: safeAttendanceTrend[0],
+        rawData: safeAttendanceTrend
       })
 
-      safeAttendanceTrend.forEach((attendance, index) => {
+      // Debug: Log each attendance record in detail
+      safeAttendanceTrend.forEach((item, idx) => {
+        console.log(`📅 Attendance ${idx}:`, {
+          date: item?.date,
+          dateType: typeof item?.date,
+          dateISO: item?.date instanceof Date ? item.date.toISOString() : 'Not a Date',
+          status: item?.status,
+          checkInTime: item?.checkInTime,
+          checkOutTime: item?.checkOutTime
+        })
+      })
+
+      // CRITICAL FIX: Convert date strings to Date objects with proper normalization
+      const normalizedAttendanceTrend = safeAttendanceTrend.map((item, idx) => {
+        const originalDate = item.date
+
+        // CRITICAL: Parse date with timezone awareness to prevent date shifts
+        const parsedDate = parseAttendanceDate(item.date)
+
+        // Debug timezone issues
+        console.log(`🕐 Date conversion ${idx}:`, {
+          original: originalDate,
+          originalType: typeof originalDate,
+          parsed: parsedDate,
+          parsedISO: parsedDate.toISOString(),
+          parsedLocal: parsedDate.toLocaleDateString('id-ID'),
+          parsedLocalFull: parsedDate.toLocaleDateString('id-ID', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          }),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezoneOffset: parsedDate.getTimezoneOffset()
+        })
+
+        return {
+          ...item,
+          date: parsedDate, // Use simple parsed date without additional normalization
+          checkInTime: item.checkInTime ? new Date(item.checkInTime) : undefined,
+          checkOutTime: item.checkOutTime ? new Date(item.checkOutTime) : undefined
+        }
+      })
+
+      console.log('🔧 Normalized attendance trend:', {
+        original: safeAttendanceTrend.length,
+        normalized: normalizedAttendanceTrend.length,
+        sampleNormalized: normalizedAttendanceTrend[0] ? {
+          date: normalizedAttendanceTrend[0].date,
+          dateISO: normalizedAttendanceTrend[0].date.toISOString(),
+          dateLocal: normalizedAttendanceTrend[0].date.toLocaleDateString('id-ID')
+        } : null
+      })
+
+      normalizedAttendanceTrend.forEach((attendance, index) => {
         try {
           // Validate attendance record
           if (!attendance) {
@@ -86,6 +141,13 @@ function RecentActivityComponent({
             return
           }
 
+          console.log(`📅 Processing normalized attendance ${index}:`, {
+            date: attendance.date,
+            dateISO: attendance.date.toISOString(),
+            dateLocal: attendance.date.toLocaleDateString('id-ID'),
+            status: attendance.status
+          })
+
           // Generate unique, stable key using utility function
           const uniqueId = generateAttendanceKey(attendance, index)
           console.log(`Generated attendance key: ${uniqueId} for index ${index}`)
@@ -94,12 +156,15 @@ function RecentActivityComponent({
           const title = getAttendanceTitle(attendance.status)
           const description = getAttendanceDescription(attendance)
 
+          // FIXED: Use check-in time for activity timestamp instead of attendance date
+          const activityTimestamp = attendance.checkInTime || attendance.date
+
           activities.push({
             id: uniqueId,
             type: 'attendance',
             title,
             description,
-            timestamp: attendance.date,
+            timestamp: activityTimestamp,
             metadata: {
               status: attendance.status,
               checkInTime: attendance.checkInTime,
@@ -214,8 +279,17 @@ function RecentActivityComponent({
   const getAttendanceDescription = (attendance: AttendanceTrend): string => {
     try {
       if (!attendance || !attendance.date) {
+        console.error('❌ getAttendanceDescription - Invalid attendance data:', attendance)
         return 'Data tidak tersedia'
       }
+
+      // Debug logging to track date handling
+      console.log('📅 getAttendanceDescription - Processing attendance:', {
+        date: attendance.date,
+        dateType: typeof attendance.date,
+        dateISO: attendance.date instanceof Date ? attendance.date.toISOString() : 'Not a Date object',
+        status: attendance.status
+      })
 
       const date = new Date(attendance.date).toLocaleDateString('id-ID', {
         weekday: 'long',
@@ -382,22 +456,7 @@ function RecentActivityComponent({
     return null
   }
 
-  const formatRelativeTime = (date: Date): string => {
-    const now = new Date()
-    const diffInHours = (now.getTime() - new Date(date).getTime()) / (1000 * 60 * 60)
-
-    if (diffInHours < 1) {
-      const diffInMinutes = Math.floor(diffInHours * 60)
-      return `${diffInMinutes} menit yang lalu`
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)} jam yang lalu`
-    } else if (diffInHours < 48) {
-      return 'Kemarin'
-    } else {
-      const diffInDays = Math.floor(diffInHours / 24)
-      return `${diffInDays} hari yang lalu`
-    }
-  }
+  // REMOVED: Using the improved formatRelativeTime from dateUtils instead
 
   const activities = getAllActivities()
 
@@ -463,11 +522,24 @@ function RecentActivityComponent({
                           {formatRelativeTime(activity.timestamp)}
                         </span>
                         
-                        {/* Additional metadata */}
-                        {activity.type === 'attendance' && activity.metadata?.workingHoursMinutes !== undefined && activity.metadata.workingHoursMinutes > 0 && (
+                        {/* Additional metadata with real-time working hours */}
+                        {activity.type === 'attendance' && (
                           <span className="text-xs text-gray-500 flex items-center gap-1">
                             <Timer className="h-3 w-3" />
-                            {formatWorkingHours(activity.metadata.workingHoursMinutes)}
+                            {(() => {
+                              try {
+                                return formatWorkingHours(
+                                  getDisplayWorkingMinutes(
+                                    activity.metadata?.checkInTime,
+                                    activity.metadata?.checkOutTime,
+                                    activity.metadata?.workingHoursMinutes
+                                  )
+                                )
+                              } catch (error) {
+                                console.error('❌ Error calculating working hours in RecentActivity:', error)
+                                return '0h 0m'
+                              }
+                            })()}
                           </span>
                         )}
                       </div>

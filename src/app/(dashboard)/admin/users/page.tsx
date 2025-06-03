@@ -213,7 +213,7 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 flex items-center gap-2">
             <Users className="h-6 w-6" />
             Manajemen Pengguna
           </h1>

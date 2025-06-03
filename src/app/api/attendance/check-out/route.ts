@@ -51,12 +51,22 @@ export async function POST(request: NextRequest) {
       latitude: body.latitude,
       longitude: body.longitude,
       address: body.address,
-      toleranceMeters: 0, // Default tolerance, can be made configurable
+      toleranceMeters: 100, // 100m radius tolerance as per requirement
       ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
     })
 
     if (!result.success) {
+      // Check if this is a location validation error
+      if (result.locationValidation && !result.locationValidation.isValid) {
+        // Return 422 (Unprocessable Entity) for location validation failures
+        return NextResponse.json({
+          success: false,
+          error: result.error,
+          locationValidation: result.locationValidation
+        }, { status: 422 })
+      }
+
       return NextResponse.json(
         { success: false, error: result.error },
         { status: 400 }

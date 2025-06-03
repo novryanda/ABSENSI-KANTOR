@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AttendanceStats, RequestStats, TeamStats, CompanyStats } from '@/types/domain'
-import { formatWorkingHours } from '@/utils/dateUtils'
+import { formatWorkingHours, getDisplayWorkingMinutes } from '@/utils/dateUtils'
 
 interface StatsCardsProps {
   attendance?: AttendanceStats
@@ -77,10 +77,25 @@ export default function StatsCards({
       },
       {
         title: 'Jam Kerja Hari Ini',
-        value: attendance.today.workingHoursMinutes !== undefined
-          ? formatWorkingHours(attendance.today.workingHoursMinutes)
-          : (attendance.today.workingHours ? `${attendance.today.workingHours}h` : '0h 0m'),
-        subtitle: `Target: ${attendance.monthly.totalWorkDays * 8}h`,
+        value: (() => {
+          try {
+            return formatWorkingHours(
+              getDisplayWorkingMinutes(
+                attendance.today.checkInTime,
+                attendance.today.checkOutTime,
+                attendance.today.workingHoursMinutes
+              )
+            )
+          } catch (error) {
+            console.error('❌ Error calculating working hours in StatsCards:', error)
+            return '0h 0m'
+          }
+        })(),
+        subtitle: attendance.today.status === 'checked_out'
+          ? `Selesai: ${attendance.today.checkOutTime ? formatTime(attendance.today.checkOutTime) : '-'}`
+          : attendance.today.status === 'checked_in'
+          ? '⏱️ Sedang bekerja (real-time)...'
+          : 'Belum mulai bekerja',
         icon: Timer,
         variant: 'info',
         trend: {

@@ -14,8 +14,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, MapPin } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import { LocationPicker } from './LocationPicker'
 import {toast} from "sonner";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 
 const officeLocationSchema = z.object({
   name: z.string().min(1, 'Nama lokasi wajib diisi').max(100, 'Nama maksimal 100 karakter'),
@@ -44,11 +47,11 @@ interface OfficeLocation {
 interface OfficeLocationFormProps {
   location?: OfficeLocation
   onSuccess: () => void
+  onCancel?: () => void
 }
 
-export function OfficeLocationForm({ location, onSuccess }: OfficeLocationFormProps) {
+export function OfficeLocationForm({ location, onSuccess, onCancel }: OfficeLocationFormProps) {
   const [loading, setLoading] = useState(false)
-  const [gettingLocation, setGettingLocation] = useState(false)
 
   const {
     register,
@@ -62,42 +65,27 @@ export function OfficeLocationForm({ location, onSuccess }: OfficeLocationFormPr
       name: location?.name || '',
       code: location?.code || '',
       address: location?.address || '',
-      latitude: location?.latitude || 0,
-      longitude: location?.longitude || 0,
+      latitude: location?.latitude || 0.4647298976760957,
+      longitude: location?.longitude || 101.41050382578146,
       radiusMeters: location?.radiusMeters || 100,
       isActive: location?.isActive ?? true
     }
   })
 
   const isActive = watch('isActive')
+  const currentLatitude = watch('latitude')
+  const currentLongitude = watch('longitude')
+  const currentRadius = watch('radiusMeters')
 
-  // Get current location
-  const getCurrentLocation = async () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation tidak didukung oleh browser')
-      return
-    }
+  // Handle location change from LocationPicker
+  const handleLocationChange = (latitude: number, longitude: number) => {
+    setValue('latitude', latitude)
+    setValue('longitude', longitude)
+  }
 
-    setGettingLocation(true)
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000
-        })
-      })
-
-      setValue('latitude', position.coords.latitude)
-      setValue('longitude', position.coords.longitude)
-      
-      toast.success('Lokasi berhasil didapatkan')
-    } catch (error) {
-      console.error('Error getting location:', error)
-      toast.error('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin lokasi diberikan.')
-    } finally {
-      setGettingLocation(false)
-    }
+  // Handle radius change from LocationPicker
+  const handleRadiusChange = (radius: number) => {
+    setValue('radiusMeters', radius)
   }
 
   const onSubmit = async (data: OfficeLocationFormData) => {
@@ -141,136 +129,176 @@ export function OfficeLocationForm({ location, onSuccess }: OfficeLocationFormPr
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      {/* Name */}
-      <div className="space-y-2">
-        <Label htmlFor="name">Nama Lokasi *</Label>
-        <Input
-          id="name"
-          {...register('name')}
-          placeholder="Contoh: Kantor Pusat"
-        />
-        {errors.name && (
-          <p className="text-sm text-red-600">{errors.name.message}</p>
-        )}
-      </div>
+    <div className="w-full space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="office-location-form space-y-8">
+        {/* Basic Information Section */}
+        <Card className="location-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span>Informasi Dasar</span>
+            </CardTitle>
+            <CardDescription>
+              Informasi umum tentang lokasi kantor
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Name and Code in Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nama Lokasi *</Label>
+                <Input
+                  id="name"
+                  {...register('name')}
+                  placeholder="Contoh: Kantor Pusat Jakarta"
+                  className={errors.name ? 'border-red-500' : ''}
+                />
+                {errors.name && (
+                  <p className="text-sm text-red-600 flex items-center space-x-1">
+                    <span>⚠️</span>
+                    <span>{errors.name.message}</span>
+                  </p>
+                )}
+              </div>
 
-      {/* Code */}
-      <div className="space-y-2">
-        <Label htmlFor="code">Kode Lokasi *</Label>
-        <Input
-          id="code"
-          {...register('code')}
-          placeholder="Contoh: KANTOR-PUSAT"
-          style={{ textTransform: 'uppercase' }}
-        />
-        {errors.code && (
-          <p className="text-sm text-red-600">{errors.code.message}</p>
-        )}
-        <p className="text-sm text-muted-foreground">
-          Hanya huruf besar, angka, underscore (_), dan dash (-) yang diizinkan
-        </p>
-      </div>
+              <div className="space-y-2">
+                <Label htmlFor="code">Kode Lokasi *</Label>
+                <Input
+                  id="code"
+                  {...register('code')}
+                  placeholder="Contoh: JKT-PUSAT"
+                  className={errors.code ? 'border-red-500' : ''}
+                  style={{ textTransform: 'uppercase' }}
+                />
+                {errors.code && (
+                  <p className="text-sm text-red-600 flex items-center space-x-1">
+                    <span>⚠️</span>
+                    <span>{errors.code.message}</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Gunakan huruf besar, angka, underscore (_), dan dash (-)
+                </p>
+              </div>
+            </div>
 
-      {/* Address */}
-      <div className="space-y-2">
-        <Label htmlFor="address">Alamat</Label>
-        <Textarea
-          id="address"
-          {...register('address')}
-          placeholder="Alamat lengkap lokasi kantor"
-          rows={3}
-        />
-        {errors.address && (
-          <p className="text-sm text-red-600">{errors.address.message}</p>
-        )}
-      </div>
+            {/* Address */}
+            <div className="space-y-2">
+              <Label htmlFor="address">Alamat Lengkap</Label>
+              <Textarea
+                id="address"
+                {...register('address')}
+                placeholder="Masukkan alamat lengkap lokasi kantor..."
+                rows={3}
+                className={errors.address ? 'border-red-500' : ''}
+              />
+              {errors.address && (
+                <p className="text-sm text-red-600 flex items-center space-x-1">
+                  <span>⚠️</span>
+                  <span>{errors.address.message}</span>
+                </p>
+              )}
+            </div>
 
-      {/* Coordinates */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Label>Koordinat GPS *</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={getCurrentLocation}
-            disabled={gettingLocation}
-          >
-            {gettingLocation ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <MapPin className="h-4 w-4 mr-2" />
-            )}
-            Gunakan Lokasi Saat Ini
-          </Button>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="latitude">Latitude</Label>
-            <Input
-              id="latitude"
-              type="number"
-              step="any"
-              {...register('latitude', { valueAsNumber: true })}
-              placeholder="0.4647298976760957"
+            {/* Status Toggle */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="space-y-1">
+                <Label htmlFor="isActive" className="text-sm font-medium">
+                  Status Lokasi
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {isActive
+                    ? 'Lokasi aktif dan dapat digunakan untuk validasi absensi'
+                    : 'Lokasi nonaktif dan tidak dapat digunakan untuk validasi absensi'
+                  }
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="isActive"
+                  checked={isActive}
+                  onCheckedChange={(checked) => setValue('isActive', checked)}
+                />
+                <Label htmlFor="isActive" className="text-sm">
+                  {isActive ? 'Aktif' : 'Nonaktif'}
+                </Label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Location & GPS Section */}
+        <Card className="location-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span>Koordinat GPS & Radius Validasi</span>
+            </CardTitle>
+            <CardDescription>
+              Tentukan lokasi GPS dan radius untuk validasi absensi karyawan
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LocationPicker
+              latitude={currentLatitude}
+              longitude={currentLongitude}
+              radiusMeters={currentRadius}
+              onLocationChange={handleLocationChange}
+              onRadiusChange={handleRadiusChange}
             />
-            {errors.latitude && (
-              <p className="text-sm text-red-600">{errors.latitude.message}</p>
+
+            {/* Error Messages for Location Fields */}
+            {(errors.latitude || errors.longitude || errors.radiusMeters) && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm font-medium text-red-800 mb-2">Kesalahan Validasi:</p>
+                <div className="space-y-1">
+                  {errors.latitude && (
+                    <p className="text-sm text-red-600 flex items-center space-x-1">
+                      <span>•</span>
+                      <span>Latitude: {errors.latitude.message}</span>
+                    </p>
+                  )}
+                  {errors.longitude && (
+                    <p className="text-sm text-red-600 flex items-center space-x-1">
+                      <span>•</span>
+                      <span>Longitude: {errors.longitude.message}</span>
+                    </p>
+                  )}
+                  {errors.radiusMeters && (
+                    <p className="text-sm text-red-600 flex items-center space-x-1">
+                      <span>•</span>
+                      <span>Radius: {errors.radiusMeters.message}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="longitude">Longitude</Label>
-            <Input
-              id="longitude"
-              type="number"
-              step="any"
-              {...register('longitude', { valueAsNumber: true })}
-              placeholder="101.41050382578146"
-            />
-            {errors.longitude && (
-              <p className="text-sm text-red-600">{errors.longitude.message}</p>
-            )}
+          </CardContent>
+        </Card>
+
+        {/* Action Buttons - Fixed at Bottom */}
+        <div className="sticky-buttons sticky bottom-0 bg-white border-t pt-4 mt-6">
+          <div className="button-group flex flex-col sm:flex-row gap-3 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel || onSuccess}
+              className="sm:w-auto w-full mobile-full-width"
+              disabled={loading}
+            >
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="sm:w-auto w-full min-w-[120px] mobile-full-width"
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {location ? 'Update Lokasi' : 'Simpan Lokasi'}
+            </Button>
           </div>
         </div>
-      </div>
-
-      {/* Radius */}
-      <div className="space-y-2">
-        <Label htmlFor="radiusMeters">Radius Toleransi (meter) *</Label>
-        <Input
-          id="radiusMeters"
-          type="number"
-          {...register('radiusMeters', { valueAsNumber: true })}
-          placeholder="100"
-        />
-        {errors.radiusMeters && (
-          <p className="text-sm text-red-600">{errors.radiusMeters.message}</p>
-        )}
-        <p className="text-sm text-muted-foreground">
-          Jarak maksimal yang diizinkan dari titik koordinat (10-1000 meter)
-        </p>
-      </div>
-
-      {/* Active Status */}
-      <div className="flex items-center space-x-2">
-        <Switch
-          id="isActive"
-          checked={isActive}
-          onCheckedChange={(checked) => setValue('isActive', checked)}
-        />
-        <Label htmlFor="isActive">Lokasi Aktif</Label>
-      </div>
-
-      {/* Submit Button */}
-      <div className="flex justify-end space-x-2">
-        <Button type="submit" disabled={loading}>
-          {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          {location ? 'Update' : 'Simpan'}
-        </Button>
-      </div>
-    </form>
+      </form>
+    </div>
   )
 }

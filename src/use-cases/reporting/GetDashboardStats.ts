@@ -10,10 +10,10 @@ import { IPermissionRequestRepository } from '@/domain/repositories/IPermissionR
 import { IWorkLetterRepository } from '@/domain/repositories/IWorkLetterRepository'
 import { IApprovalRepository } from '@/domain/repositories/IApprovalRepository'
 import { IDepartmentRepository } from '@/domain/repositories/IDepartmentRepository'
-import { 
-  DashboardStats, 
-  AttendanceStats, 
-  RequestStats, 
+import {
+  DashboardStats,
+  AttendanceStats,
+  RequestStats,
   ApprovalStats,
   TeamStats,
   CompanyStats,
@@ -21,6 +21,7 @@ import {
   MonthlyAttendance,
   AttendanceTrend
 } from '@/types/domain'
+import { calculateAttendanceStats, isAttendancePresent, getAttendanceDate } from '@/utils/dateUtils'
 import { AttendanceStatus, RequestStatus } from '@prisma/client'
 
 interface GetDashboardStatsRequest {
@@ -97,12 +98,20 @@ export class GetDashboardStats {
   }
 
   private async getAttendanceStats(userId: string): Promise<AttendanceStats> {
-    const today = new Date()
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-    const last7Days = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    // CRITICAL: Use normalized date for consistency
+    const today = getAttendanceDate()
+    const currentDate = new Date()
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+    const last7Days = new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000)
 
-    // Get today's attendance
+    console.log('📊 getAttendanceStats - Using normalized today date:', {
+      today: today.toISOString(),
+      todayLocal: today.toLocaleDateString('id-ID'),
+      currentDate: currentDate.toISOString()
+    })
+
+    // Get today's attendance using normalized date
     const todayAttendance = await this.attendanceRepository.findByUserAndDate(userId, today)
     
     // Get monthly attendance
@@ -128,11 +137,20 @@ export class GetDashboardStats {
 
   private buildTodayAttendance(attendance: any): TodayAttendance {
     if (!attendance) {
-      return { status: 'not_checked_in' }
+      return { status: 'not_checked_in', workingHoursMinutes: 0 }
     }
 
+    // Debug logging to track working hours values
+    console.log('🔍 buildTodayAttendance - Raw attendance data:', {
+      id: attendance.id,
+      workingHoursMinutes: attendance.workingHoursMinutes,
+      checkInTime: attendance.checkInTime?.toISOString(),
+      checkOutTime: attendance.checkOutTime?.toISOString(),
+      attendanceDate: attendance.attendanceDate?.toISOString()
+    })
+
     let status: TodayAttendance['status'] = 'not_checked_in'
-    
+
     if (attendance.checkInTime && attendance.checkOutTime) {
       status = 'checked_out'
     } else if (attendance.checkInTime) {
@@ -141,50 +159,118 @@ export class GetDashboardStats {
       status = 'absent'
     }
 
+    // Build location info if available
+    let location: TodayAttendance['location'] = undefined
+    if (attendance.checkInLatitude && attendance.checkInLongitude) {
+      location = {
+        latitude: Number(attendance.checkInLatitude),
+        longitude: Number(attendance.checkInLongitude),
+        address: attendance.checkInAddress
+      }
+    }
+
+    // Build office location info if available
+    let officeLocation: TodayAttendance['officeLocation'] = undefined
+    if (attendance.officeLocation) {
+      officeLocation = {
+        id: attendance.officeLocation.id,
+        name: attendance.officeLocation.name,
+        distance: location && attendance.officeLocation.latitude && attendance.officeLocation.longitude
+          ? this.calculateDistance(
+              location.latitude,
+              location.longitude,
+              Number(attendance.officeLocation.latitude),
+              Number(attendance.officeLocation.longitude)
+            )
+          : undefined
+      }
+    }
+
+    // FIXED: Calculate real-time working hours for ongoing sessions
+    const workingHoursMinutes = this.calculateDisplayWorkingHours(
+      attendance.checkInTime,
+      attendance.checkOutTime,
+      attendance.workingHoursMinutes
+    )
+
+    console.log('⏰ Working hours calculation result:', {
+      status,
+      hasCheckIn: !!attendance.checkInTime,
+      hasCheckOut: !!attendance.checkOutTime,
+      storedMinutes: attendance.workingHoursMinutes,
+      calculatedMinutes: workingHoursMinutes,
+      isRealTime: !attendance.checkOutTime && !!attendance.checkInTime
+    })
+
     return {
       status,
       checkInTime: attendance.checkInTime,
       checkOutTime: attendance.checkOutTime,
-      workingHours: attendance.workingHours, // Deprecated field for backward compatibility
-      workingHoursMinutes: attendance.workingHoursMinutes || 0,
+      workingHoursMinutes,
       isLate: attendance.isLate,
-      location: attendance.latitude && attendance.longitude ? {
-        latitude: attendance.latitude,
-        longitude: attendance.longitude,
-        address: attendance.location
-      } : undefined
+      isValidLocation: attendance.isValidLocation,
+      location,
+      officeLocation
     }
   }
 
   private buildMonthlyAttendance(attendances: any[], startDate: Date, endDate: Date): MonthlyAttendance {
-    const totalWorkDays = this.calculateWorkDays(startDate, endDate)
-    const presentDays = attendances.filter(a => a.status === AttendanceStatus.PRESENT).length
-    const absentDays = attendances.filter(a => a.status === AttendanceStatus.ABSENT).length
-    const lateDays = attendances.filter(a => a.isLate).length
-    const overtimeHours = attendances.reduce((sum, a) => sum + (a.overtimeHours || 0), 0)
-    const attendanceRate = totalWorkDays > 0 ? (presentDays / totalWorkDays) * 100 : 0
+    // Use the new utility function for accurate attendance calculation
+    const stats = calculateAttendanceStats(attendances, startDate, endDate)
 
-    return {
-      totalWorkDays,
-      presentDays,
-      absentDays,
-      lateDays,
-      overtimeHours,
-      attendanceRate: Math.round(attendanceRate * 100) / 100
-    }
+    console.log('📊 buildMonthlyAttendance - Using attendance records:', {
+      recordCount: attendances.length,
+      dateRange: {
+        start: startDate.toLocaleDateString('id-ID'),
+        end: endDate.toLocaleDateString('id-ID')
+      },
+      calculatedStats: stats
+    })
+
+    return stats
   }
 
   private buildAttendanceTrend(attendances: any[]): AttendanceTrend[] {
+    console.log('🔧 buildAttendanceTrend - Processing attendances:', {
+      count: attendances.length,
+      sample: attendances[0] ? {
+        attendanceDate: attendances[0].attendanceDate,
+        attendanceDateType: typeof attendances[0].attendanceDate,
+        attendanceDateISO: attendances[0].attendanceDate instanceof Date ? attendances[0].attendanceDate.toISOString() : 'Not a Date',
+        status: attendances[0].status
+      } : null
+    })
+
     return attendances
       .filter(attendance => attendance && attendance.attendanceDate) // Filter out invalid records
-      .map(attendance => ({
-        date: attendance.attendanceDate, // Use correct field name
-        status: attendance.status,
-        checkInTime: attendance.checkInTime,
-        checkOutTime: attendance.checkOutTime,
-        workingHours: attendance.workingHoursMinutes ? Math.round(attendance.workingHoursMinutes / 60 * 100) / 100 : 0, // Convert minutes to hours for backward compatibility
-        workingHoursMinutes: attendance.workingHoursMinutes || 0 // Include minutes for precise calculation
-      }))
+      .map((attendance, index) => {
+        // Use attendanceDate as-is from database (already normalized when saved)
+        const attendanceDate = attendance.attendanceDate
+
+        console.log(`📅 buildAttendanceTrend ${index}:`, {
+          originalDate: attendance.attendanceDate,
+          originalISO: attendance.attendanceDate instanceof Date ? attendance.attendanceDate.toISOString() : 'Not a Date',
+          originalLocal: attendance.attendanceDate instanceof Date ? attendance.attendanceDate.toLocaleDateString('id-ID') : 'Not a Date',
+          processedDate: attendanceDate,
+          processedISO: attendanceDate.toISOString(),
+          processedLocal: attendanceDate.toLocaleDateString('id-ID'),
+          processedLocalFull: attendanceDate.toLocaleDateString('id-ID', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          }),
+          status: attendance.status
+        })
+
+        return {
+          date: attendanceDate, // Use processed date
+          status: attendance.status,
+          checkInTime: attendance.checkInTime,
+          checkOutTime: attendance.checkOutTime,
+          workingHoursMinutes: attendance.workingHoursMinutes || 0 // Working hours in minutes for precise calculation
+        }
+      })
   }
 
   private async getRequestStats(userId: string): Promise<RequestStats> {
@@ -252,18 +338,31 @@ export class GetDashboardStats {
 
   private async getTeamStats(departmentId: string, managerId: string): Promise<TeamStats> {
     const teamMembers = await this.userRepository.findByDepartmentId(departmentId)
-    const today = new Date()
-    
+    // CRITICAL: Use normalized date for consistency
+    const today = getAttendanceDate()
+    console.log('👥 getTeamStats - Using normalized today date:', today.toISOString())
+
     const teamAttendances = await Promise.all(
-      teamMembers.map(member => 
+      teamMembers.map(member =>
         this.attendanceRepository.findByUserAndDate(member.id, today)
       )
     )
 
-    const presentToday = teamAttendances.filter(a => a?.status === AttendanceStatus.PRESENT).length
+    // Use consistent logic for counting attendance - PRESENT and LATE both count as present
+    const presentToday = teamAttendances.filter(a => a && isAttendancePresent(a.status)).length
     const absentToday = teamAttendances.filter(a => a?.status === AttendanceStatus.ABSENT).length
-    const onLeaveToday = teamAttendances.filter(a => a?.status === AttendanceStatus.LEAVE).length
-    const lateToday = teamAttendances.filter(a => a?.isLate).length
+    const onLeaveToday = teamAttendances.filter(a => a?.status === 'LEAVE').length // Handle LEAVE status
+    const lateToday = teamAttendances.filter(a => a?.status === AttendanceStatus.LATE).length
+
+    console.log('👥 getTeamStats - Team attendance calculation:', {
+      departmentId,
+      totalMembers: teamMembers.length,
+      presentToday,
+      absentToday,
+      onLeaveToday,
+      lateToday,
+      attendanceRecords: teamAttendances.filter(a => a !== null).length
+    })
 
     const teamAttendance = teamMembers.map((member, index) => {
       const attendance = teamAttendances[index]
@@ -289,24 +388,36 @@ export class GetDashboardStats {
   private async getCompanyStats(): Promise<CompanyStats> {
     const allUsers = await this.userRepository.findAll()
     const departments = await this.departmentRepository.findAll()
-    const today = new Date()
+    // CRITICAL: Use normalized date for consistency
+    const today = getAttendanceDate()
+    console.log('🏢 getCompanyStats - Using normalized today date:', today.toISOString())
 
     // Get today's company-wide attendance
     const todayAttendances = await this.attendanceRepository.findByDate(today)
-    
-    const presentToday = todayAttendances.filter(a => a.status === AttendanceStatus.PRESENT).length
+
+    // Use consistent logic for counting attendance - PRESENT and LATE both count as present
+    const presentToday = todayAttendances.filter(a => isAttendancePresent(a.status)).length
     const absentToday = todayAttendances.filter(a => a.status === AttendanceStatus.ABSENT).length
-    const onLeaveToday = todayAttendances.filter(a => a.status === AttendanceStatus.LEAVE).length
+    const onLeaveToday = todayAttendances.filter(a => a.status === 'LEAVE').length
+
+    console.log('🏢 getCompanyStats - Company attendance calculation:', {
+      totalEmployees: allUsers.length,
+      presentToday,
+      absentToday,
+      onLeaveToday,
+      attendanceRecords: todayAttendances.length
+    })
 
     // Get department stats
     const departmentStats = await Promise.all(
       departments.map(async dept => {
         const deptUsers = allUsers.filter(u => u.departmentId === dept.id)
-        const deptAttendances = todayAttendances.filter(a => 
+        const deptAttendances = todayAttendances.filter(a =>
           deptUsers.some(u => u.id === a.userId)
         )
-        const deptPresent = deptAttendances.filter(a => a.status === AttendanceStatus.PRESENT).length
-        
+        // Use consistent logic for department stats too
+        const deptPresent = deptAttendances.filter(a => isAttendancePresent(a.status)).length
+
         return {
           departmentId: dept.id,
           departmentName: dept.name,
@@ -317,19 +428,27 @@ export class GetDashboardStats {
       })
     )
 
-    // Get 7-day trend
-    const last7Days = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    // Get 7-day trend - FIXED: Use attendanceDate instead of date
+    const currentDate = new Date()
+    const last7Days = new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000)
     const trendData = await this.attendanceRepository.findByDateRange(last7Days, today)
-    
+
+    console.log('📈 getCompanyStats - Trend calculation:', {
+      last7Days: last7Days.toISOString(),
+      today: today.toISOString(),
+      trendRecords: trendData.length
+    })
+
     const attendanceTrend = Array.from({ length: 7 }, (_, i) => {
       const date = new Date(last7Days.getTime() + i * 24 * 60 * 60 * 1000)
-      const dayAttendances = trendData.filter(a => 
-        a.date.toDateString() === date.toDateString()
+      const dayAttendances = trendData.filter(a =>
+        a.attendanceDate.toDateString() === date.toDateString() // FIXED: Use attendanceDate
       )
-      const totalPresent = dayAttendances.filter(a => a.status === AttendanceStatus.PRESENT).length
+      // Use consistent logic for trend calculation
+      const totalPresent = dayAttendances.filter(a => isAttendancePresent(a.status)).length
       const totalAbsent = dayAttendances.filter(a => a.status === AttendanceStatus.ABSENT).length
       const total = totalPresent + totalAbsent
-      
+
       return {
         date,
         totalPresent,
@@ -376,7 +495,90 @@ export class GetDashboardStats {
     return ['SUPERVISOR', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(userRole)
   }
 
+  /**
+   * Calculate display working hours with real-time calculation for ongoing sessions
+   * @param checkInTime - Check-in time (Date object or ISO string)
+   * @param checkOutTime - Check-out time (Date object or ISO string, optional)
+   * @param storedWorkingMinutes - Stored working minutes from database
+   * @returns Working hours in minutes (real-time if still working, stored if completed)
+   */
+  private calculateDisplayWorkingHours(
+    checkInTime?: Date | string,
+    checkOutTime?: Date | string,
+    storedWorkingMinutes?: number
+  ): number {
+    try {
+      // Convert to Date objects safely
+      const checkInDate = this.safeToDate(checkInTime)
+      const checkOutDate = this.safeToDate(checkOutTime)
+
+      // If user has checked out, use stored working minutes
+      if (checkOutDate && storedWorkingMinutes !== undefined) {
+        return storedWorkingMinutes
+      }
+
+      // If user is still checked in, calculate current working time
+      if (checkInDate && !checkOutDate) {
+        const now = new Date()
+        const diffInMs = now.getTime() - checkInDate.getTime()
+        return Math.max(0, Math.floor(diffInMs / (1000 * 60))) // Ensure non-negative
+      }
+
+      // Fallback to stored value or 0
+      return storedWorkingMinutes || 0
+    } catch (error) {
+      console.error('❌ Error in calculateDisplayWorkingHours:', error, {
+        checkInTime,
+        checkOutTime,
+        storedWorkingMinutes
+      })
+      return storedWorkingMinutes || 0
+    }
+  }
+
+  /**
+   * Safely convert a date input to a Date object
+   * @param dateInput - Date object, string, or null/undefined
+   * @returns Date object or null if conversion fails
+   */
+  private safeToDate(dateInput: Date | string | null | undefined): Date | null {
+    if (!dateInput) {
+      return null
+    }
+
+    if (dateInput instanceof Date) {
+      return isNaN(dateInput.getTime()) ? null : dateInput
+    }
+
+    if (typeof dateInput === 'string') {
+      try {
+        const date = new Date(dateInput)
+        return isNaN(date.getTime()) ? null : date
+      } catch (error) {
+        console.warn('Failed to parse date string in GetDashboardStats:', dateInput, error)
+        return null
+      }
+    }
+
+    return null
+  }
+
   private canViewCompanyStats(userRole: string): boolean {
     return ['HR_ADMIN', 'SUPER_ADMIN'].includes(userRole)
+  }
+
+  private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371e3 // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180 // φ, λ in radians
+    const φ2 = lat2 * Math.PI / 180
+    const Δφ = (lat2 - lat1) * Math.PI / 180
+    const Δλ = (lng2 - lng1) * Math.PI / 180
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+    return R * c // Distance in meters
   }
 }

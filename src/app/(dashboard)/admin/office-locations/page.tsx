@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { useState, useEffect } from 'react'
+import '@/styles/office-location-dialog.css'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,7 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -37,16 +38,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  MapPin, 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  MapPin,
   Loader2,
   Eye,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Shield
 } from 'lucide-react'
 
 import { OfficeLocationForm } from '@/components/admin/office-locations/OfficeLocationForm'
@@ -83,6 +91,7 @@ export default function OfficeLocationsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+  const [activeLocationsCount, setActiveLocationsCount] = useState(0)
   
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -113,6 +122,10 @@ export default function OfficeLocationsPage() {
       setCurrentPage(data.pagination.page)
       setTotalPages(data.pagination.totalPages)
       setTotal(data.pagination.total)
+
+      // Count active locations
+      const activeCount = data.locations.filter((loc: OfficeLocation) => loc.isActive).length
+      setActiveLocationsCount(activeCount)
     } catch (error) {
       console.error('Error fetching office locations:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to fetch office locations')
@@ -128,9 +141,29 @@ export default function OfficeLocationsPage() {
     fetchLocations(1, value)
   }
 
+  // Check if location can be deleted
+  const canDeleteLocation = (location: OfficeLocation): { canDelete: boolean; reason?: string } => {
+    // Cannot delete if it's the last active location
+    if (location.isActive && activeLocationsCount === 1) {
+      return {
+        canDelete: false,
+        reason: 'Tidak dapat menghapus lokasi kantor aktif terakhir. Sistem memerlukan minimal satu lokasi aktif untuk validasi absensi.'
+      }
+    }
+
+    return { canDelete: true }
+  }
+
   // Handle delete
   const handleDelete = async () => {
     if (!selectedLocation) return
+
+    // Check if location can be deleted locally first
+    const validation = canDeleteLocation(selectedLocation)
+    if (!validation.canDelete) {
+      toast.error(validation.reason || 'Lokasi tidak dapat dihapus')
+      return
+    }
 
     try {
       const response = await fetch(`/api/admin/office-locations/${selectedLocation.id}`, {
@@ -140,7 +173,13 @@ export default function OfficeLocationsPage() {
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to delete office location')
+        // Show more user-friendly error messages
+        if (result.error === 'Tidak dapat menghapus lokasi kantor terakhir yang aktif') {
+          toast.error('Tidak dapat menghapus lokasi kantor aktif terakhir. Sistem memerlukan minimal satu lokasi aktif untuk validasi absensi.')
+        } else {
+          toast.error(result.error || 'Gagal menghapus lokasi kantor')
+        }
+        return
       }
 
       toast.success('Lokasi kantor berhasil dihapus')
@@ -150,7 +189,7 @@ export default function OfficeLocationsPage() {
       fetchLocations(currentPage, searchTerm)
     } catch (error) {
       console.error('Error deleting office location:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to delete office location')
+      toast.error('Terjadi kesalahan saat menghapus lokasi kantor')
     }
   }
 
@@ -183,14 +222,18 @@ export default function OfficeLocationsPage() {
               Tambah Lokasi
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Tambah Lokasi Kantor</DialogTitle>
-              <DialogDescription>
+          <DialogContent className="office-location-dialog max-w-4xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="flex-shrink-0 pb-4 border-b bg-white z-10">
+              <DialogTitle className="text-xl font-semibold">Tambah Lokasi Kantor</DialogTitle>
+              <DialogDescription className="text-muted-foreground">
                 Tambahkan lokasi kantor baru untuk validasi absensi
               </DialogDescription>
             </DialogHeader>
-            <OfficeLocationForm onSuccess={handleFormSuccess} />
+
+            {/* Scrollable Content Area */}
+            <div className="office-location-dialog-content flex-1 overflow-y-auto py-4 px-1">
+              <OfficeLocationForm onSuccess={handleFormSuccess} />
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -201,8 +244,24 @@ export default function OfficeLocationsPage() {
           <div className="flex justify-between items-center">
             <div>
               <CardTitle>Daftar Lokasi Kantor</CardTitle>
-              <CardDescription>
-                Total {total} lokasi kantor
+              <CardDescription className="space-y-1">
+                <div>Total {total} lokasi kantor</div>
+                <div className="flex items-center space-x-4 text-sm">
+                  <span className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span>{activeLocationsCount} Aktif</span>
+                  </span>
+                  <span className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                    <span>{total - activeLocationsCount} Nonaktif</span>
+                  </span>
+                  {activeLocationsCount === 1 && (
+                    <span className="flex items-center space-x-1 text-amber-600">
+                      <Shield className="h-3 w-3" />
+                      <span className="text-xs">Minimal 1 lokasi aktif diperlukan</span>
+                    </span>
+                  )}
+                </div>
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -236,18 +295,41 @@ export default function OfficeLocationsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {locations.map((location) => (
-                  <TableRow key={location.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{location.name}</div>
-                        {location.address && (
-                          <div className="text-sm text-muted-foreground">
-                            {location.address}
+                {locations.map((location) => {
+                  const deleteValidation = canDeleteLocation(location)
+                  const isProtected = !deleteValidation.canDelete
+
+                  return (
+                    <TableRow
+                      key={location.id}
+                      className={isProtected ? 'bg-amber-50/50 border-l-4 border-l-amber-400' : ''}
+                    >
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-medium">{location.name}</span>
+                              {isProtected && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Shield className="h-4 w-4 text-amber-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-sm">Lokasi terproteksi - tidak dapat dihapus</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </div>
+                            {location.address && (
+                              <div className="text-sm text-muted-foreground">
+                                {location.address}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </TableCell>
+                        </div>
+                      </TableCell>
                     <TableCell>
                       <Badge variant="outline">{location.code}</Badge>
                     </TableCell>
@@ -287,20 +369,56 @@ export default function OfficeLocationsPage() {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedLocation(location)
-                            setShowDeleteDialog(true)
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+
+                        {/* Delete Button with Conditional Rendering */}
+                        {(() => {
+                          const deleteValidation = canDeleteLocation(location)
+
+                          if (!deleteValidation.canDelete) {
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled
+                                        className="opacity-50 cursor-not-allowed"
+                                      >
+                                        <div className="flex items-center space-x-1">
+                                          <Shield className="h-3 w-3" />
+                                          <Trash2 className="h-4 w-4" />
+                                        </div>
+                                      </Button>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <p className="text-sm">{deleteValidation.reason}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )
+                          }
+
+                          return (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLocation(location)
+                                setShowDeleteDialog(true)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )
+                        })()}
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}
@@ -342,19 +460,23 @@ export default function OfficeLocationsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Lokasi Kantor</DialogTitle>
-            <DialogDescription>
-              Edit informasi lokasi kantor
+        <DialogContent className="office-location-dialog max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0 pb-4 border-b bg-white z-10">
+            <DialogTitle className="text-xl font-semibold">Edit Lokasi Kantor</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Edit informasi lokasi kantor untuk validasi absensi
             </DialogDescription>
           </DialogHeader>
-          {selectedLocation && (
-            <OfficeLocationForm 
-              location={selectedLocation} 
-              onSuccess={handleFormSuccess} 
-            />
-          )}
+
+          {/* Scrollable Content Area */}
+          <div className="office-location-dialog-content flex-1 overflow-y-auto py-4 px-1">
+            {selectedLocation && (
+              <OfficeLocationForm
+                location={selectedLocation}
+                onSuccess={handleFormSuccess}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -374,15 +496,44 @@ export default function OfficeLocationsPage() {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus Lokasi Kantor</AlertDialogTitle>
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus lokasi kantor "{selectedLocation?.name}"? 
-              Tindakan ini tidak dapat dibatalkan.
+            <AlertDialogTitle className="flex items-center space-x-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              <span>Hapus Lokasi Kantor</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Apakah Anda yakin ingin menghapus lokasi kantor <strong>"{selectedLocation?.name}"</strong>?
+              </p>
+              <p className="text-red-600 font-medium">
+                ⚠️ Tindakan ini tidak dapat dibatalkan.
+              </p>
+              {selectedLocation && (() => {
+                const validation = canDeleteLocation(selectedLocation)
+                if (!validation.canDelete) {
+                  return (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <Shield className="h-4 w-4 text-red-500" />
+                        <span className="text-red-700 font-medium">Tidak dapat dihapus</span>
+                      </div>
+                      <p className="text-red-600 text-sm mt-1">
+                        {validation.reason}
+                      </p>
+                    </div>
+                  )
+                }
+                return null
+              })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              disabled={selectedLocation ? !canDeleteLocation(selectedLocation).canDelete : false}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
               Hapus
             </AlertDialogAction>
           </AlertDialogFooter>

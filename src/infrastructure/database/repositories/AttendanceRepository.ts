@@ -12,7 +12,7 @@ import {
   AttendanceFilters,
   AttendanceWithUser
 } from '@/domain/repositories/IAttendanceRepository'
-import { normalizeToStartOfDay, normalizeToEndOfDay, getAttendanceDate } from '@/utils/dateUtils'
+import { normalizeToStartOfDay, normalizeToEndOfDay, getAttendanceDate, isAttendancePresent } from '@/utils/dateUtils'
 
 export class PrismaAttendanceRepository implements IAttendanceRepository {
   constructor(private prisma: PrismaClient) {}
@@ -86,35 +86,80 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
       where: {
         userId,
         attendanceDate: normalizedDate
+      },
+      include: {
+        officeLocation: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            latitude: true,
+            longitude: true,
+            radiusMeters: true
+          }
+        }
       }
     })
 
-    console.log('📊 findByUserAndDate result:', attendance ? `Found attendance ID: ${attendance.id}` : 'No attendance found')
+    console.log('📊 findByUserAndDate result:', attendance ? {
+      id: attendance.id,
+      attendanceDate: attendance.attendanceDate.toISOString(),
+      workingHoursMinutes: attendance.workingHoursMinutes,
+      checkInTime: attendance.checkInTime?.toISOString(),
+      checkOutTime: attendance.checkOutTime?.toISOString()
+    } : 'No attendance found')
     return attendance
   }
 
   async findByUserAndDateRange(userId: string, startDate: Date, endDate: Date): Promise<AttendanceEntity[]> {
+    // CRITICAL: Normalize dates for consistent database queries
+    const normalizedStartDate = normalizeToStartOfDay(startDate)
+    const normalizedEndDate = normalizeToEndOfDay(endDate)
+
+    console.log('🔍 findByUserAndDateRange called with:', {
+      userId,
+      originalStartDate: startDate.toISOString(),
+      originalEndDate: endDate.toISOString(),
+      normalizedStartDate: normalizedStartDate.toISOString(),
+      normalizedEndDate: normalizedEndDate.toISOString()
+    })
+
     const attendances = await this.prisma.attendance.findMany({
       where: {
         userId,
         attendanceDate: {
-          gte: startDate,
-          lte: endDate
+          gte: normalizedStartDate,
+          lte: normalizedEndDate
         }
       },
       orderBy: {
         attendanceDate: 'desc'
       }
     })
+
+    console.log('📊 findByUserAndDateRange result:', {
+      count: attendances.length,
+      sample: attendances[0] ? {
+        id: attendances[0].id,
+        attendanceDate: attendances[0].attendanceDate.toISOString(),
+        attendanceDateLocal: attendances[0].attendanceDate.toLocaleDateString('id-ID'),
+        status: attendances[0].status
+      } : 'No attendances found'
+    })
+
     return attendances
   }
 
   async findByDate(date: Date): Promise<AttendanceWithUser[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // FIXED: Use consistent date normalization functions
+    const startOfDay = normalizeToStartOfDay(date)
+    const endOfDay = normalizeToEndOfDay(date)
+
+    console.log('🔍 findByDate with normalized dates:', {
+      input: date.toISOString(),
+      startOfDay: startOfDay.toISOString(),
+      endOfDay: endOfDay.toISOString()
+    })
 
     const attendances = await this.prisma.attendance.findMany({
       where: {
@@ -177,11 +222,9 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findByDepartmentAndDate(departmentId: string, date: Date): Promise<AttendanceWithUser[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // FIXED: Use consistent date normalization functions
+    const startOfDay = normalizeToStartOfDay(date)
+    const endOfDay = normalizeToEndOfDay(date)
 
     const attendances = await this.prisma.attendance.findMany({
       where: {
@@ -251,14 +294,12 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
 
   async countByStatus(status: AttendanceStatus, date?: Date): Promise<number> {
     const whereClause: any = { status }
-    
+
     if (date) {
-      const startOfDay = new Date(date)
-      startOfDay.setHours(0, 0, 0, 0)
-      
-      const endOfDay = new Date(date)
-      endOfDay.setHours(23, 59, 59, 999)
-      
+      // FIXED: Use consistent date normalization functions
+      const startOfDay = normalizeToStartOfDay(date)
+      const endOfDay = normalizeToEndOfDay(date)
+
       whereClause.attendanceDate = {
         gte: startOfDay,
         lte: endOfDay
@@ -294,14 +335,12 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
         departmentId
       }
     }
-    
+
     if (date) {
-      const startOfDay = new Date(date)
-      startOfDay.setHours(0, 0, 0, 0)
-      
-      const endOfDay = new Date(date)
-      endOfDay.setHours(23, 59, 59, 999)
-      
+      // FIXED: Use consistent date normalization functions
+      const startOfDay = normalizeToStartOfDay(date)
+      const endOfDay = normalizeToEndOfDay(date)
+
       whereClause.attendanceDate = {
         gte: startOfDay,
         lte: endOfDay
@@ -315,11 +354,9 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findLateArrivals(date: Date, lateThresholdMinutes: number = 0): Promise<AttendanceWithUser[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // FIXED: Use consistent date normalization functions
+    const startOfDay = normalizeToStartOfDay(date)
+    const endOfDay = normalizeToEndOfDay(date)
 
     // Assuming work starts at 8:00 AM
     const workStartTime = new Date(date)
@@ -359,11 +396,9 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findAbsentUsers(date: Date, departmentId?: string): Promise<string[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // FIXED: Use consistent date normalization functions
+    const startOfDay = normalizeToStartOfDay(date)
+    const endOfDay = normalizeToEndOfDay(date)
 
     const whereClause: any = {
       attendanceDate: {
@@ -390,11 +425,9 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findOvertimeAttendances(date: Date, overtimeThresholdMinutes: number = 480): Promise<AttendanceWithUser[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // FIXED: Use consistent date normalization functions
+    const startOfDay = normalizeToStartOfDay(date)
+    const endOfDay = normalizeToEndOfDay(date)
 
     const attendances = await this.prisma.attendance.findMany({
       where: {
@@ -562,8 +595,21 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
 
   async getAttendanceRate(userId: string, startDate: Date, endDate: Date): Promise<number> {
     const totalDays = this.calculateWorkDays(startDate, endDate)
-    const presentDays = await this.countByUserAndStatus(userId, AttendanceStatus.PRESENT, startDate, endDate)
-    
+
+    // Get all attendance records for the user in the date range
+    const attendances = await this.findByUserAndDateRange(userId, startDate, endDate)
+
+    // Count present days using consistent logic (PRESENT + LATE = present)
+    const presentDays = attendances.filter(a => isAttendancePresent(a.status)).length
+
+    console.log('📊 getAttendanceRate calculation:', {
+      userId,
+      totalDays,
+      presentDays,
+      attendanceRecords: attendances.length,
+      rate: totalDays > 0 ? (presentDays / totalDays) * 100 : 0
+    })
+
     return totalDays > 0 ? (presentDays / totalDays) * 100 : 0
   }
 
@@ -577,18 +623,20 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
     if (users.length === 0) return 0
 
     const totalWorkDays = this.calculateWorkDays(startDate, endDate) * users.length
-    
-    const presentDays = await this.prisma.attendance.count({
-      where: {
-        attendanceDate: {
-          gte: startDate,
-          lte: endDate
-        },
-        status: AttendanceStatus.PRESENT,
-        user: {
-          departmentId
-        }
-      }
+
+    // Get all attendance records for the department in the date range
+    const attendances = await this.findByDepartmentAndDateRange(departmentId, startDate, endDate)
+
+    // Count present days using consistent logic (PRESENT + LATE = present)
+    const presentDays = attendances.filter(a => isAttendancePresent(a.status)).length
+
+    console.log('📊 getDepartmentAttendanceRate calculation:', {
+      departmentId,
+      totalUsers: users.length,
+      totalWorkDays,
+      presentDays,
+      attendanceRecords: attendances.length,
+      rate: totalWorkDays > 0 ? (presentDays / totalWorkDays) * 100 : 0
     })
 
     return totalWorkDays > 0 ? (presentDays / totalWorkDays) * 100 : 0
@@ -602,15 +650,19 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
     if (totalUsers === 0) return 0
 
     const totalWorkDays = this.calculateWorkDays(startDate, endDate) * totalUsers
-    
-    const presentDays = await this.prisma.attendance.count({
-      where: {
-        attendanceDate: {
-          gte: startDate,
-          lte: endDate
-        },
-        status: AttendanceStatus.PRESENT
-      }
+
+    // Get all attendance records for the date range
+    const attendances = await this.findByDateRange(startDate, endDate)
+
+    // Count present days using consistent logic (PRESENT + LATE = present)
+    const presentDays = attendances.filter(a => isAttendancePresent(a.status)).length
+
+    console.log('📊 getCompanyAttendanceRate calculation:', {
+      totalUsers,
+      totalWorkDays,
+      presentDays,
+      attendanceRecords: attendances.length,
+      rate: totalWorkDays > 0 ? (presentDays / totalWorkDays) * 100 : 0
     })
 
     return totalWorkDays > 0 ? (presentDays / totalWorkDays) * 100 : 0

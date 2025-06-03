@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { QuickAction, TodayAttendance } from '@/types/domain'
+import { formatWorkingHours, getDisplayWorkingMinutes } from '@/utils/dateUtils'
 
 interface QuickActionsProps {
   userRole: string
@@ -381,8 +382,15 @@ export default function QuickActions({
 
         {/* Additional Info */}
         {todayAttendance && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-600 mb-1">Status Hari Ini:</div>
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg space-y-2">
+            <div className="text-xs text-gray-600 mb-1">
+              Status Hari Ini ({new Date().toLocaleDateString('id-ID', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}):
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">
                 {todayAttendance.status === 'not_checked_in' && 'Belum Absen Masuk'}
@@ -390,15 +398,72 @@ export default function QuickActions({
                 {todayAttendance.status === 'checked_out' && 'Sudah Absen Pulang'}
                 {todayAttendance.status === 'absent' && 'Tidak Hadir'}
               </span>
-              {todayAttendance.checkInTime && (
-                <span className="text-xs text-gray-500">
-                  Masuk: {new Date(todayAttendance.checkInTime).toLocaleTimeString('id-ID', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              )}
+              <div className="text-xs text-gray-500 space-y-1">
+                {todayAttendance.checkInTime && (
+                  <div>
+                    Masuk: {new Date(todayAttendance.checkInTime).toLocaleTimeString('id-ID', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
+                )}
+                {todayAttendance.checkOutTime && (
+                  <div>
+                    Pulang: {new Date(todayAttendance.checkOutTime).toLocaleTimeString('id-ID', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
+                )}
+                <div>
+                  Jam Kerja: {(() => {
+                    try {
+                      return formatWorkingHours(
+                        getDisplayWorkingMinutes(
+                          todayAttendance.checkInTime,
+                          todayAttendance.checkOutTime,
+                          todayAttendance.workingHoursMinutes
+                        )
+                      )
+                    } catch (error) {
+                      console.error('❌ Error calculating working hours in QuickActions:', error)
+                      return '0h 0m'
+                    }
+                  })()}
+                </div>
+                {todayAttendance.status === 'checked_in' && (
+                  <div className="text-xs text-blue-500 mt-1">
+                    ⏱️ Sedang bekerja (real-time)
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Location Info */}
+            {todayAttendance.location && (
+              <div className="border-t pt-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Lokasi Absen:</span>
+                  <div className="flex items-center space-x-1">
+                    {todayAttendance.isValidLocation ? (
+                      <span className="text-green-600">✅ Valid</span>
+                    ) : (
+                      <span className="text-orange-600">⚠️ Di luar radius</span>
+                    )}
+                  </div>
+                </div>
+                {todayAttendance.officeLocation && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    {todayAttendance.officeLocation.name}
+                    {todayAttendance.officeLocation.distance && (
+                      <span className="ml-1">
+                        ({Math.round(todayAttendance.officeLocation.distance)}m)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

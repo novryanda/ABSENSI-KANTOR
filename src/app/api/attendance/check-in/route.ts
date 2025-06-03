@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       longitude: body.longitude,
       address: body.address,
       officeLocationId: body.officeLocationId,
-      toleranceMeters: 0, // Default tolerance, can be made configurable
+      toleranceMeters: 100, // 100m radius tolerance as per requirement
       ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
     })
@@ -76,6 +76,17 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       console.log('❌ Check-in failed:', result.error)
+
+      // Check if this is a location validation error
+      if (result.locationValidation && !result.locationValidation.isValid) {
+        // Return 422 (Unprocessable Entity) for location validation failures
+        return NextResponse.json({
+          success: false,
+          error: result.error,
+          locationValidation: result.locationValidation
+        }, { status: 422 })
+      }
+
       return NextResponse.json(
         { success: false, error: result.error },
         { status: 400 }

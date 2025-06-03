@@ -66,6 +66,17 @@ export default function DashboardPage() {
       }
 
       if (result.success) {
+        // CRITICAL: Log received data for debugging date issues
+        console.log('📥 Dashboard data received:', {
+          attendanceTrend: result.data?.attendance?.trend?.slice(0, 2) || 'No trend data',
+          attendanceTrendCount: result.data?.attendance?.trend?.length || 0,
+          sampleTrendItem: result.data?.attendance?.trend?.[0] ? {
+            date: result.data.attendance.trend[0].date,
+            dateType: typeof result.data.attendance.trend[0].date,
+            status: result.data.attendance.trend[0].status
+          } : 'No trend items'
+        })
+
         setDashboardData(result.data)
         setLastUpdated(new Date())
       } else {
@@ -92,11 +103,18 @@ export default function DashboardPage() {
         throw new Error('Geolocation tidak didukung oleh browser')
       }
 
+      // Show loading toast
+      toast({
+        title: 'Memproses Check-in',
+        description: 'Mendapatkan lokasi Anda...',
+        variant: 'default'
+      })
+
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000
+          timeout: 15000, // Increased timeout for better accuracy
+          maximumAge: 30000 // Reduced max age for fresher location
         })
       })
 
@@ -114,29 +132,53 @@ export default function DashboardPage() {
       const result = await response.json()
 
       if (!response.ok) {
+        // Handle location validation errors specifically
+        if (response.status === 422 && result.locationValidation) {
+          const locationValidation = result.locationValidation
+          const nearestLocation = locationValidation.nearestOfficeLocation
+          const distance = locationValidation.distance
+          const allowedRadius = locationValidation.allowedRadius
+
+          let detailedMessage = result.error
+          if (nearestLocation && distance && allowedRadius) {
+            detailedMessage += `\n\nInformasi lokasi:\n• Lokasi terdekat: ${nearestLocation.name}\n• Jarak Anda: ${distance}m\n• Radius maksimal: ${allowedRadius}m`
+          }
+
+          toast({
+            title: 'Lokasi Tidak Valid ❌',
+            description: detailedMessage,
+            variant: 'destructive',
+            duration: 8000 // Show longer for location errors
+          })
+          return
+        }
+
         throw new Error(result.error || 'Gagal melakukan check-in')
       }
 
       // Show detailed location validation feedback
       const locationValidation = result.data?.locationValidation
       if (locationValidation) {
+        const distance = locationValidation.distance
+        const allowedRadius = locationValidation.allowedRadius
+        const officeName = locationValidation.nearestOfficeLocation?.name
+
         if (locationValidation.isValid) {
           toast({
-            title: 'Check-in Berhasil',
-            description: locationValidation.message || 'Check-in berhasil dicatat',
+            title: 'Check-in Berhasil ✅',
+            description: `Lokasi valid di ${officeName}. Jarak: ${distance}m (Radius: ${allowedRadius}m)`,
             variant: 'default'
           })
         } else {
-          // Still successful but with location warning
           toast({
-            title: 'Check-in Berhasil (Peringatan Lokasi)',
-            description: locationValidation.message || 'Check-in dicatat namun lokasi di luar radius yang diizinkan',
+            title: 'Check-in Berhasil ⚠️',
+            description: `Lokasi di luar radius ${officeName}. Jarak: ${distance}m (Maks: ${allowedRadius}m)`,
             variant: 'default'
           })
         }
       } else {
         toast({
-          title: 'Berhasil',
+          title: 'Check-in Berhasil',
           description: 'Check-in berhasil dicatat',
           variant: 'default'
         })
@@ -146,17 +188,46 @@ export default function DashboardPage() {
       fetchDashboardData(true)
     } catch (error) {
       console.error('Check-in error:', error)
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal melakukan check-in',
-        variant: 'destructive'
-      })
+
+      // Handle specific geolocation errors
+      if (error instanceof GeolocationPositionError) {
+        let errorMessage = 'Gagal mendapatkan lokasi'
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Akses lokasi ditolak. Mohon izinkan akses lokasi di browser Anda.'
+            break
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Lokasi tidak tersedia. Pastikan GPS aktif.'
+            break
+          case error.TIMEOUT:
+            errorMessage = 'Timeout mendapatkan lokasi. Coba lagi.'
+            break
+        }
+        toast({
+          title: 'Error Lokasi',
+          description: errorMessage,
+          variant: 'destructive'
+        })
+      } else {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Gagal melakukan check-in',
+          variant: 'destructive'
+        })
+      }
     }
   }
 
   // Handle check-out
   const handleCheckOut = async () => {
     try {
+      // Show loading toast
+      toast({
+        title: 'Memproses Check-out',
+        description: 'Mendapatkan lokasi Anda...',
+        variant: 'default'
+      })
+
       // Get user location for check-out validation
       let latitude, longitude
       if (navigator.geolocation) {
@@ -164,15 +235,20 @@ export default function DashboardPage() {
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 60000
+              timeout: 15000, // Increased timeout for better accuracy
+              maximumAge: 30000 // Reduced max age for fresher location
             })
           })
           latitude = position.coords.latitude
           longitude = position.coords.longitude
         } catch (locationError) {
           console.warn('Could not get location for check-out:', locationError)
-          // Continue without location validation
+          // Continue without location validation but show warning
+          toast({
+            title: 'Peringatan Lokasi',
+            description: 'Tidak dapat mendapatkan lokasi. Check-out akan dilanjutkan tanpa validasi lokasi.',
+            variant: 'default'
+          })
         }
       }
 
@@ -190,37 +266,91 @@ export default function DashboardPage() {
       const result = await response.json()
 
       if (!response.ok) {
+        // Handle location validation errors specifically
+        if (response.status === 422 && result.locationValidation) {
+          const locationValidation = result.locationValidation
+          const nearestLocation = locationValidation.nearestOfficeLocation
+          const distance = locationValidation.distance
+          const allowedRadius = locationValidation.allowedRadius
+
+          let detailedMessage = result.error
+          if (nearestLocation && distance && allowedRadius) {
+            detailedMessage += `\n\nInformasi lokasi:\n• Lokasi terdekat: ${nearestLocation.name}\n• Jarak Anda: ${distance}m\n• Radius maksimal: ${allowedRadius}m`
+          }
+
+          toast({
+            title: 'Lokasi Tidak Valid ❌',
+            description: detailedMessage,
+            variant: 'destructive',
+            duration: 8000 // Show longer for location errors
+          })
+          return
+        }
+
         throw new Error(result.error || 'Gagal melakukan check-out')
       }
 
-      // Show detailed feedback with working hours
+      // Show detailed feedback with working hours and location validation
       const workingHours = result.data?.workingHours
       const locationValidation = result.data?.locationValidation
 
-      let description = `Check-out berhasil dicatat`
-      if (workingHours) {
-        description += `. Jam kerja: ${workingHours}`
-      }
+      if (locationValidation) {
+        const distance = locationValidation.distance
+        const allowedRadius = locationValidation.allowedRadius
+        const officeName = locationValidation.nearestOfficeLocation?.name
 
-      if (locationValidation && !locationValidation.isValid) {
-        description += ` (Peringatan: lokasi di luar radius yang diizinkan)`
+        if (locationValidation.isValid) {
+          toast({
+            title: 'Check-out Berhasil ✅',
+            description: `Jam kerja: ${workingHours || 'Tidak tersedia'}. Lokasi valid di ${officeName}. Jarak: ${distance}m`,
+            variant: 'default'
+          })
+        } else {
+          toast({
+            title: 'Check-out Berhasil ⚠️',
+            description: `Jam kerja: ${workingHours || 'Tidak tersedia'}. Lokasi di luar radius ${officeName}. Jarak: ${distance}m (Maks: ${allowedRadius}m)`,
+            variant: 'default'
+          })
+        }
+      } else {
+        toast({
+          title: 'Check-out Berhasil',
+          description: `Jam kerja: ${workingHours || 'Tidak tersedia'}`,
+          variant: 'default'
+        })
       }
-
-      toast({
-        title: 'Check-out Berhasil',
-        description,
-        variant: 'default'
-      })
 
       // Refresh dashboard data
       fetchDashboardData(true)
     } catch (error) {
       console.error('Check-out error:', error)
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Gagal melakukan check-out',
-        variant: 'destructive'
-      })
+
+      // Handle specific geolocation errors
+      if (error instanceof GeolocationPositionError) {
+        let errorMessage = 'Gagal mendapatkan lokasi'
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Akses lokasi ditolak. Check-out akan dilanjutkan tanpa validasi lokasi.'
+            break
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Lokasi tidak tersedia. Check-out akan dilanjutkan tanpa validasi lokasi.'
+            break
+          case error.TIMEOUT:
+            errorMessage = 'Timeout mendapatkan lokasi. Check-out akan dilanjutkan tanpa validasi lokasi.'
+            break
+        }
+        toast({
+          title: 'Peringatan Lokasi',
+          description: errorMessage,
+          variant: 'default'
+        })
+      } else {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Gagal melakukan check-out',
+          variant: 'destructive'
+        })
+      }
     }
   }
 
@@ -304,8 +434,7 @@ export default function DashboardPage() {
   const layout = getDashboardLayout()
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="flex-1 px-6 lg:px-8 py-6 lg:py-8 space-y-6 lg:space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
@@ -421,7 +550,6 @@ export default function DashboardPage() {
           </div>
         </>
       )}
-      </div>
     </div>
   )
 }

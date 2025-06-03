@@ -7,7 +7,7 @@ import { PrismaClient, AttendanceStatus } from '@prisma/client'
 import { logAuditAction } from '@/infrastructure/database/supabaseClient'
 
 export interface AttendanceAuditData {
-  action: 'CHECK_IN' | 'CHECK_OUT' | 'UPDATE_STATUS' | 'MANUAL_ENTRY'
+  action: 'CHECK_IN' | 'CHECK_OUT' | 'UPDATE_STATUS' | 'MANUAL_ENTRY' | 'FAILED_CHECK_IN' | 'FAILED_CHECK_OUT'
   entityId: string
   entityType: 'ATTENDANCE'
   userId: string
@@ -24,6 +24,8 @@ export interface AttendanceAuditData {
     workingHoursMinutes?: number
     status?: AttendanceStatus
     isValidLocation?: boolean
+    failureReason?: string
+    locationValidation?: any
     locationInfo?: {
       latitude?: number
       longitude?: number
@@ -254,6 +256,103 @@ export class AttendanceAuditService {
         checkOutTime: attendanceData.checkOutTime,
         workingHoursMinutes: attendanceData.workingHoursMinutes,
         status: attendanceData.status
+      }
+    })
+  }
+
+  async logFailedCheckInAttempt(
+    userId: string,
+    attemptData: {
+      attendanceDate: Date
+      latitude: number
+      longitude: number
+      address?: string
+      officeLocationId?: string
+      failureReason: string
+      locationValidation: any
+    },
+    performedBy: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<void> {
+    // Generate a unique ID for the failed attempt (since no attendance record is created)
+    const attemptId = `failed_${userId}_${attemptData.attendanceDate.toISOString().split('T')[0]}_${Date.now()}`
+
+    await this.logAction({
+      action: 'FAILED_CHECK_IN',
+      entityId: attemptId,
+      entityType: 'ATTENDANCE',
+      userId,
+      performedBy,
+      newValues: {
+        attendanceDate: attemptData.attendanceDate.toISOString(),
+        latitude: attemptData.latitude,
+        longitude: attemptData.longitude,
+        address: attemptData.address,
+        officeLocationId: attemptData.officeLocationId,
+        failureReason: attemptData.failureReason,
+        locationValidation: attemptData.locationValidation
+      },
+      ipAddress,
+      userAgent,
+      reason: `Failed check-in attempt: ${attemptData.failureReason}`,
+      metadata: {
+        attendanceDate: attemptData.attendanceDate,
+        failureReason: attemptData.failureReason,
+        locationValidation: attemptData.locationValidation,
+        locationInfo: {
+          latitude: attemptData.latitude,
+          longitude: attemptData.longitude,
+          address: attemptData.address,
+          officeLocationId: attemptData.officeLocationId
+        }
+      }
+    })
+  }
+
+  async logFailedCheckOutAttempt(
+    userId: string,
+    attemptData: {
+      attendanceDate: Date
+      latitude?: number
+      longitude?: number
+      address?: string
+      failureReason: string
+      locationValidation?: any
+    },
+    performedBy: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<void> {
+    // Generate a unique ID for the failed attempt
+    const attemptId = `failed_checkout_${userId}_${attemptData.attendanceDate.toISOString().split('T')[0]}_${Date.now()}`
+
+    await this.logAction({
+      action: 'FAILED_CHECK_OUT',
+      entityId: attemptId,
+      entityType: 'ATTENDANCE',
+      userId,
+      performedBy,
+      newValues: {
+        attendanceDate: attemptData.attendanceDate.toISOString(),
+        latitude: attemptData.latitude,
+        longitude: attemptData.longitude,
+        address: attemptData.address,
+        failureReason: attemptData.failureReason,
+        locationValidation: attemptData.locationValidation
+      },
+      ipAddress,
+      userAgent,
+      reason: `Failed check-out attempt: ${attemptData.failureReason}`,
+      metadata: {
+        attendanceDate: attemptData.attendanceDate,
+        failureReason: attemptData.failureReason,
+        locationValidation: attemptData.locationValidation,
+        locationInfo: {
+          latitude: attemptData.latitude,
+          longitude: attemptData.longitude,
+          address: attemptData.address
+        }
       }
     })
   }

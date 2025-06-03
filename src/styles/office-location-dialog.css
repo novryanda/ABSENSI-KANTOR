@@ -1,0 +1,269 @@
+/* Office Location Dialog Styles */
+
+/* Smooth scrolling for dialog content */
+.office-location-dialog-content {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+/* Custom scrollbar for webkit browsers */
+.office-location-dialog-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.office-location-dialog-content::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.office-location-dialog-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.office-location-dialog-content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Responsive dialog sizing */
+@media (max-width: 768px) {
+  .office-location-dialog {
+    max-width: 95vw !important;
+    max-height: 95vh !important;
+    margin: 2.5vh auto;
+  }
+  
+  .office-location-dialog-content {
+    max-height: calc(95vh - 120px);
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .office-location-dialog {
+    max-width: 90vw !important;
+    max-height: 90vh !important;
+  }
+  
+  .office-location-dialog-content {
+    max-height: calc(90vh - 120px);
+  }
+}
+
+@media (min-width: 1025px) {
+  .office-location-dialog {
+    max-width: 1000px !important;
+    max-height: 90vh !important;
+  }
+  
+  .office-location-dialog-content {
+    max-height: calc(90vh - 120px);
+  }
+}
+
+/* Form section animations */
+.form-section-enter {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease-in-out;
+}
+
+.form-section-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Sticky button container */
+.sticky-buttons {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, white 70%, transparent);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+/* Enhanced focus states for better accessibility */
+.office-location-form input:focus,
+.office-location-form textarea:focus,
+.office-location-form button:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Loading state animations */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+/* Card hover effects */
+.location-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.location-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Error message styling */
+.error-message {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* Success message styling */
+.success-message {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Coordinate input styling */
+.coordinate-input {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  letter-spacing: 0.5px;
+}
+
+/* Section dividers */
+.section-divider {
+  position: relative;
+  margin: 2rem 0;
+}
+
+.section-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #e2e8f0, transparent);
+}
+
+/* Button group responsive */
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+  flex-direction: column;
+}
+
+@media (min-width: 640px) {
+  .button-group {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}
+
+/* Tooltip enhancements */
+.enhanced-tooltip {
+  max-width: 300px;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Form validation states */
+.field-valid {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+}
+
+.field-invalid {
+  border-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.field-warning {
+  border-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+/* Progress indicator */
+.form-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(to right, #3b82f6, #10b981);
+  transition: width 0.3s ease;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  
+  .mobile-full-width {
+    width: 100% !important;
+  }
+  
+  .mobile-text-center {
+    text-align: center !important;
+  }
+  
+  .mobile-hidden {
+    display: none !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .office-location-dialog {
+    box-shadow: none !important;
+    border: 1px solid #000 !important;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .office-location-form {
+    border-width: 2px;
+  }
+  
+  .office-location-form input,
+  .office-location-form textarea {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .office-location-dialog-content,
+  .form-section-enter,
+  .location-card,
+  .error-message,
+  .success-message {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -86,9 +86,31 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // CRITICAL: Ensure proper date serialization to prevent timezone issues
+    const serializedData = JSON.parse(JSON.stringify(result.data, (key, value) => {
+      // Handle Date objects to prevent timezone conversion issues
+      if (value instanceof Date) {
+        // For attendance dates, use ISO string to preserve exact date
+        if (key === 'attendanceDate' || key === 'date') {
+          console.log(`📅 Serializing ${key}:`, {
+            original: value,
+            iso: value.toISOString(),
+            local: value.toLocaleDateString('id-ID')
+          })
+          return value.toISOString()
+        }
+        return value.toISOString()
+      }
+      return value
+    }))
+
+    console.log('📤 Dashboard API response data sample:', {
+      attendanceTrend: serializedData.attendance?.trend?.slice(0, 1) || 'No trend data'
+    })
+
     return NextResponse.json({
       success: true,
-      data: result.data
+      data: serializedData
     })
 
   } catch (error) {

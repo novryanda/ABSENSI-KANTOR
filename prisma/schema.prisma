@@ -310,8 +310,8 @@ model Attendance {
   userId              String           @map("user_id")
   officeLocationId    String?          @map("office_location_id") // ✅ Added office location relation
   attendanceDate      DateTime         @map("attendance_date") @db.Date
-  checkInTime         DateTime?        @map("check_in_time") @db.Time
-  checkOutTime        DateTime?        @map("check_out_time") @db.Time
+  checkInTime         DateTime?        @map("check_in_time")
+  checkOutTime        DateTime?        @map("check_out_time")
   checkInLatitude     Decimal?         @map("check_in_latitude") @db.Decimal(10, 8)
   checkInLongitude    Decimal?         @map("check_in_longitude") @db.Decimal(11, 8)
   checkOutLatitude    Decimal?         @map("check_out_latitude") @db.Decimal(10, 8)

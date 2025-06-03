@@ -110,7 +110,7 @@ export class LocationValidationService implements ILocationValidationService {
           nearestOfficeLocation: nearestLocation,
           distance: nearestLocation?.distance,
           allowedRadius: activeLocations.find(l => l.id === nearestLocation?.id)?.radiusMeters,
-          errorMessage: `Anda berada di luar radius yang diizinkan. Jarak terdekat: ${nearestLocation?.distance}m dari ${nearestLocation?.name}`
+          errorMessage: `Anda tidak dapat melakukan absensi karena berada di luar radius lokasi kantor yang terdaftar. Lokasi terdekat: ${nearestLocation?.name} (Jarak: ${nearestLocation?.distance}m)`
         }
       }
     } catch (error) {
@@ -172,9 +172,9 @@ export class LocationValidationService implements ILocationValidationService {
           distance: Math.round(distance)
         },
         distance: Math.round(distance),
-        allowedRadius: officeLocation.radiusMeters,
-        errorMessage: isValid ? undefined : 
-          `Anda berada di luar radius yang diizinkan untuk ${officeLocation.name}. Jarak: ${Math.round(distance)}m, Radius maksimal: ${allowedRadius}m`
+        allowedRadius: allowedRadius,
+        errorMessage: isValid ? undefined :
+          `Anda tidak dapat melakukan absensi karena berada di luar radius lokasi kantor yang terdaftar. Lokasi: ${officeLocation.name} (Jarak: ${Math.round(distance)}m, Radius maksimal: ${allowedRadius}m)`
       }
     } catch (error) {
       console.error('Error validating against office location:', error)
