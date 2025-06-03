@@ -50,7 +50,7 @@ export interface AuthError {
 }
 
 // Permission types
-export type Permission = 
+export type Permission =
   | 'user.read' | 'user.write' | 'user.delete'
   | 'attendance.read' | 'attendance.write'
   | 'request.read' | 'request.write' | 'request.approve'
@@ -59,6 +59,111 @@ export type Permission =
 
 export interface UserPermissions {
   [key: string]: boolean;
+}
+
+// Role permissions structure (matches database JSON structure)
+export interface RolePermissions {
+  // Special permission for super admin
+  all?: boolean;
+
+  // Resource-based permissions
+  users?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+  };
+  departments?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+  };
+  roles?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+  };
+  attendance?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+  };
+  requests?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+    approve?: boolean;
+  };
+  reports?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+    export?: boolean;
+  };
+  settings?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+  };
+  audit?: {
+    read?: boolean;
+  };
+  system?: {
+    create?: boolean;
+    read?: boolean;
+    update?: boolean;
+    delete?: boolean;
+    backup?: boolean;
+    restore?: boolean;
+  };
+
+  // Team/supervisor permissions
+  team_attendance?: {
+    read?: boolean;
+    update?: boolean;
+  };
+  team_reports?: {
+    read?: boolean;
+    export?: boolean;
+  };
+  department_reports?: {
+    read?: boolean;
+    export?: boolean;
+  };
+  approvals?: {
+    read?: boolean;
+    approve?: boolean;
+  };
+
+  // Legacy format support (for backward compatibility)
+  [key: string]: any;
+}
+
+// Session user interface
+export interface SessionUser {
+  id: string;
+  nip?: string;
+  name?: string;
+  email: string;
+  image?: string;
+  phone?: string;
+  status: UserStatus;
+  role?: {
+    id: string;
+    name: string;
+    permissions: RolePermissions;
+  };
+  department?: {
+    id: string;
+    name: string;
+    code: string;
+  };
 }
 
 // Fungsi helper untuk mendeteksi tipe identifier (email/nip/unknown)

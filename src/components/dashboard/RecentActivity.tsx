@@ -25,6 +25,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { ActivityItem, RecentRequest, AttendanceTrend } from '@/types/domain'
 import { RequestStatus, AttendanceStatus } from '@prisma/client'
+import { generateAttendanceKey, generateRequestKey, validateUniqueKeys, debugKeys } from '@/utils/keyUtils'
+import { formatWorkingHours } from '@/utils/dateUtils'
+import ErrorBoundary from '@/components/common/ErrorBoundary'
 
 interface RecentActivityProps {
   recentRequests?: RecentRequest[]
@@ -33,55 +36,162 @@ interface RecentActivityProps {
   className?: string
 }
 
-export default function RecentActivity({ 
-  recentRequests = [], 
+function RecentActivityComponent({
+  recentRequests = [],
   attendanceTrend = [],
   userRole,
-  className 
+  className
 }: RecentActivityProps) {
 
-  // Combine and sort all activities
+  // Combine and sort all activities with comprehensive error handling
   const getAllActivities = (): ActivityItem[] => {
     const activities: ActivityItem[] = []
 
-    // Add attendance activities
-    attendanceTrend.forEach(attendance => {
-      activities.push({
-        id: `attendance-${attendance.date}`,
-        type: 'attendance',
-        title: getAttendanceTitle(attendance.status),
-        description: getAttendanceDescription(attendance),
-        timestamp: attendance.date,
-        metadata: {
-          status: attendance.status,
-          checkInTime: attendance.checkInTime,
-          checkOutTime: attendance.checkOutTime,
-          workingHours: attendance.workingHours
+    try {
+      // Validate input data with detailed logging
+      if (!Array.isArray(attendanceTrend)) {
+        console.warn('RecentActivity: attendanceTrend is not an array:', {
+          type: typeof attendanceTrend,
+          value: attendanceTrend,
+          isNull: attendanceTrend === null,
+          isUndefined: attendanceTrend === undefined
+        })
+      }
+      if (!Array.isArray(recentRequests)) {
+        console.warn('RecentActivity: recentRequests is not an array:', {
+          type: typeof recentRequests,
+          value: recentRequests,
+          isNull: recentRequests === null,
+          isUndefined: recentRequests === undefined
+        })
+      }
+
+      // Process attendance activities with comprehensive error handling
+      const safeAttendanceTrend = Array.isArray(attendanceTrend) ? attendanceTrend : []
+      console.log('🔍 Processing attendance trend:', {
+        count: safeAttendanceTrend.length,
+        sample: safeAttendanceTrend[0]
+      })
+
+      safeAttendanceTrend.forEach((attendance, index) => {
+        try {
+          // Validate attendance record
+          if (!attendance) {
+            console.warn(`Skipping null/undefined attendance at index ${index}`)
+            return
+          }
+
+          if (!attendance.date) {
+            console.warn(`Skipping attendance with missing date at index ${index}:`, attendance)
+            return
+          }
+
+          // Generate unique, stable key using utility function
+          const uniqueId = generateAttendanceKey(attendance, index)
+          console.log(`Generated attendance key: ${uniqueId} for index ${index}`)
+
+          // Safely get title and description
+          const title = getAttendanceTitle(attendance.status)
+          const description = getAttendanceDescription(attendance)
+
+          activities.push({
+            id: uniqueId,
+            type: 'attendance',
+            title,
+            description,
+            timestamp: attendance.date,
+            metadata: {
+              status: attendance.status,
+              checkInTime: attendance.checkInTime,
+              checkOutTime: attendance.checkOutTime,
+              workingHours: attendance.workingHours,
+              workingHoursMinutes: attendance.workingHoursMinutes
+            }
+          })
+        } catch (error) {
+          console.error(`Error processing attendance at index ${index}:`, error, attendance)
         }
       })
-    })
 
-    // Add request activities
-    recentRequests.forEach(request => {
-      activities.push({
-        id: `request-${request.id}`,
-        type: 'request',
-        title: getRequestTitle(request.type, request.status),
-        description: getRequestDescription(request),
-        timestamp: request.createdAt,
-        metadata: {
-          requestType: request.type,
-          status: request.status,
-          startDate: request.startDate,
-          endDate: request.endDate
+      // Process request activities with comprehensive error handling
+      const safeRecentRequests = Array.isArray(recentRequests) ? recentRequests : []
+      console.log('🔍 Processing recent requests:', {
+        count: safeRecentRequests.length,
+        sample: safeRecentRequests[0]
+      })
+
+      safeRecentRequests.forEach((request, index) => {
+        try {
+          // Validate request record
+          if (!request) {
+            console.warn(`Skipping null/undefined request at index ${index}`)
+            return
+          }
+
+          // Generate unique, stable key using utility function
+          const uniqueId = generateRequestKey(request, index)
+          console.log(`Generated request key: ${uniqueId} for index ${index}`)
+
+          // Safely get title and description
+          const title = getRequestTitle(request.type, request.status)
+          const description = getRequestDescription(request)
+
+          activities.push({
+            id: uniqueId,
+            type: 'request',
+            title,
+            description,
+            timestamp: request.createdAt,
+            metadata: {
+              requestType: request.type,
+              status: request.status,
+              startDate: request.startDate,
+              endDate: request.endDate
+            }
+          })
+        } catch (error) {
+          console.error(`Error processing request at index ${index}:`, error, request)
         }
       })
-    })
 
-    // Sort by timestamp (newest first)
-    return activities
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 10) // Limit to 10 most recent
+      // Sort by timestamp (newest first) with error handling
+      const sortedActivities = activities
+        .sort((a, b) => {
+          try {
+            const timeA = new Date(b.timestamp).getTime()
+            const timeB = new Date(a.timestamp).getTime()
+            return timeA - timeB
+          } catch (error) {
+            console.error('Error sorting activities:', error)
+            return 0
+          }
+        })
+        .slice(0, 10) // Limit to 10 most recent
+
+      // Validate keys in development
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          const keys = sortedActivities.map(activity => activity.id)
+          validateUniqueKeys(keys, 'RecentActivity')
+          debugKeys(keys, 'RecentActivity')
+        } catch (error) {
+          console.error('Error validating keys:', error)
+        }
+      }
+
+      console.log('✅ Successfully processed activities:', {
+        total: activities.length,
+        sorted: sortedActivities.length,
+        keys: sortedActivities.map(a => a.id)
+      })
+
+      return sortedActivities
+
+    } catch (error) {
+      console.error('❌ Critical error in getAllActivities:', error)
+      // Return empty array as fallback
+      return []
+    }
   }
 
   const getAttendanceTitle = (status: AttendanceStatus): string => {
@@ -102,30 +212,39 @@ export default function RecentActivity({
   }
 
   const getAttendanceDescription = (attendance: AttendanceTrend): string => {
-    const date = new Date(attendance.date).toLocaleDateString('id-ID', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long'
-    })
+    try {
+      if (!attendance || !attendance.date) {
+        return 'Data tidak tersedia'
+      }
 
-    if (attendance.status === AttendanceStatus.PRESENT) {
-      const checkIn = attendance.checkInTime 
-        ? new Date(attendance.checkInTime).toLocaleTimeString('id-ID', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })
-        : '-'
-      const checkOut = attendance.checkOutTime 
-        ? new Date(attendance.checkOutTime).toLocaleTimeString('id-ID', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })
-        : '-'
-      
-      return `${date} • Masuk: ${checkIn} • Pulang: ${checkOut}`
+      const date = new Date(attendance.date).toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      })
+
+      if (attendance.status === AttendanceStatus.PRESENT) {
+        const checkIn = attendance.checkInTime
+          ? new Date(attendance.checkInTime).toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : '-'
+        const checkOut = attendance.checkOutTime
+          ? new Date(attendance.checkOutTime).toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : '-'
+
+        return `${date} • Masuk: ${checkIn} • Pulang: ${checkOut}`
+      }
+
+      return `${date} • ${getAttendanceTitle(attendance.status)}`
+    } catch (error) {
+      console.error('Error generating attendance description:', error, attendance)
+      return 'Error memuat deskripsi'
     }
-
-    return `${date} • ${getAttendanceTitle(attendance.status)}`
   }
 
   const getRequestTitle = (type: string, status: RequestStatus): string => {
@@ -146,24 +265,33 @@ export default function RecentActivity({
   }
 
   const getRequestDescription = (request: RecentRequest): string => {
-    const createdDate = new Date(request.createdAt).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long'
-    })
+    try {
+      if (!request || !request.createdAt) {
+        return 'Data tidak tersedia'
+      }
 
-    if (request.startDate && request.endDate) {
-      const startDate = new Date(request.startDate).toLocaleDateString('id-ID', {
+      const createdDate = new Date(request.createdAt).toLocaleDateString('id-ID', {
         day: 'numeric',
-        month: 'short'
+        month: 'long'
       })
-      const endDate = new Date(request.endDate).toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short'
-      })
-      return `${createdDate} • Periode: ${startDate} - ${endDate}`
+
+      if (request.startDate && request.endDate) {
+        const startDate = new Date(request.startDate).toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short'
+        })
+        const endDate = new Date(request.endDate).toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short'
+        })
+        return `${createdDate} • Periode: ${startDate} - ${endDate}`
+      }
+
+      return `${createdDate} • ${request.title || 'Pengajuan'}`
+    } catch (error) {
+      console.error('Error generating request description:', error, request)
+      return 'Error memuat deskripsi'
     }
-
-    return `${createdDate} • ${request.title}`
   }
 
   const getActivityIcon = (activity: ActivityItem) => {
@@ -336,10 +464,10 @@ export default function RecentActivity({
                         </span>
                         
                         {/* Additional metadata */}
-                        {activity.type === 'attendance' && activity.metadata?.workingHours && (
+                        {activity.type === 'attendance' && activity.metadata?.workingHoursMinutes !== undefined && activity.metadata.workingHoursMinutes > 0 && (
                           <span className="text-xs text-gray-500 flex items-center gap-1">
                             <Timer className="h-3 w-3" />
-                            {activity.metadata.workingHours}h
+                            {formatWorkingHours(activity.metadata.workingHoursMinutes)}
                           </span>
                         )}
                       </div>
@@ -361,5 +489,19 @@ export default function RecentActivity({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// Export wrapped component with error boundary
+export default function RecentActivity(props: RecentActivityProps) {
+  return (
+    <ErrorBoundary
+      componentName="RecentActivity"
+      onError={(error, errorInfo) => {
+        console.error('RecentActivity Error:', { error, errorInfo, props })
+      }}
+    >
+      <RecentActivityComponent {...props} />
+    </ErrorBoundary>
   )
 }

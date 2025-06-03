@@ -12,6 +12,7 @@ import {
   AttendanceFilters,
   AttendanceWithUser
 } from '@/domain/repositories/IAttendanceRepository'
+import { normalizeToStartOfDay, normalizeToEndOfDay, getAttendanceDate } from '@/utils/dateUtils'
 
 export class PrismaAttendanceRepository implements IAttendanceRepository {
   constructor(private prisma: PrismaClient) {}
@@ -24,15 +25,37 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async create(data: CreateAttendanceData): Promise<AttendanceEntity> {
-    const attendance = await this.prisma.attendance.create({
-      data: {
-        ...data,
-        status: data.status || AttendanceStatus.PRESENT,
-        workingHoursMinutes: data.workingHoursMinutes || 0,
-        isValidLocation: data.isValidLocation ?? true
-      }
+    // CRITICAL: Normalize attendance date to prevent unique constraint violations
+    const normalizedData = {
+      ...data,
+      attendanceDate: getAttendanceDate(data.attendanceDate),
+      status: data.status || AttendanceStatus.PRESENT,
+      workingHoursMinutes: data.workingHoursMinutes || 0,
+      isValidLocation: data.isValidLocation ?? true
+    }
+
+    console.log('💾 Creating attendance with normalized data:', {
+      userId: normalizedData.userId,
+      attendanceDate: normalizedData.attendanceDate.toISOString(),
+      originalDate: data.attendanceDate.toISOString()
     })
-    return attendance
+
+    try {
+      const attendance = await this.prisma.attendance.create({
+        data: normalizedData
+      })
+      console.log('✅ Attendance created successfully:', attendance.id)
+      return attendance
+    } catch (error: any) {
+      console.error('❌ Failed to create attendance:', error)
+
+      // Handle unique constraint violation specifically
+      if (error.code === 'P2002' && error.meta?.target?.includes('userId') && error.meta?.target?.includes('attendanceDate')) {
+        throw new Error('Anda sudah melakukan check-in hari ini')
+      }
+
+      throw error
+    }
   }
 
   async update(id: string, data: UpdateAttendanceData): Promise<AttendanceEntity> {
@@ -50,21 +73,23 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findByUserAndDate(userId: string, date: Date): Promise<AttendanceEntity | null> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    
-    const endOfDay = new Date(date)
-    endOfDay.setHours(23, 59, 59, 999)
+    // CRITICAL: Use the same normalization as create method
+    const normalizedDate = getAttendanceDate(date)
+
+    console.log('🔍 findByUserAndDate called with:', {
+      userId,
+      originalDate: date.toISOString(),
+      normalizedDate: normalizedDate.toISOString()
+    })
 
     const attendance = await this.prisma.attendance.findFirst({
       where: {
         userId,
-        attendanceDate: {
-          gte: startOfDay,
-          lte: endOfDay
-        }
+        attendanceDate: normalizedDate
       }
     })
+
+    console.log('📊 findByUserAndDate result:', attendance ? `Found attendance ID: ${attendance.id}` : 'No attendance found')
     return attendance
   }
 
@@ -478,18 +503,19 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async findTodayAttendance(userId: string): Promise<AttendanceEntity | null> {
-    const today = new Date()
+    // Use normalized today date for consistency
+    const today = getAttendanceDate()
     return this.findByUserAndDate(userId, today)
   }
 
   async hasCheckedIn(userId: string, date: Date): Promise<boolean> {
     const attendance = await this.findByUserAndDate(userId, date)
-    return attendance?.checkInTime !== null
+    return attendance !== null && attendance.checkInTime !== null
   }
 
   async hasCheckedOut(userId: string, date: Date): Promise<boolean> {
     const attendance = await this.findByUserAndDate(userId, date)
-    return attendance?.checkOutTime !== null
+    return attendance !== null && attendance.checkOutTime !== null
   }
 
   calculateWorkingHours(checkInTime: Date, checkOutTime: Date): number {
@@ -506,9 +532,32 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
   }
 
   async validateLocation(latitude: number, longitude: number, officeLocationId?: string): Promise<boolean> {
-    // This would typically check against office locations in the database
-    // For now, return true as a placeholder
-    return true
+    try {
+      // Import the location validation service
+      const { LocationValidationService } = await import('@/infrastructure/services/LocationValidationService')
+      const { PrismaOfficeLocationRepository } = await import('@/infrastructure/database/repositories/OfficeLocationRepository')
+
+      const officeLocationRepository = new PrismaOfficeLocationRepository(this.prisma)
+      const locationValidationService = new LocationValidationService(officeLocationRepository)
+
+      if (officeLocationId) {
+        // Validate against specific office location
+        const result = await locationValidationService.validateAgainstOfficeLocation(
+          latitude,
+          longitude,
+          officeLocationId
+        )
+        return result.isValid
+      } else {
+        // Validate against any active office location
+        const result = await locationValidationService.validateUserLocation(latitude, longitude)
+        return result.isValid
+      }
+    } catch (error) {
+      console.error('Error validating location:', error)
+      // Return false for safety if validation fails
+      return false
+    }
   }
 
   async getAttendanceRate(userId: string, startDate: Date, endDate: Date): Promise<number> {

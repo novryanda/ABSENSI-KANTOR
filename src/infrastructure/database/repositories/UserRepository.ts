@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { IUserRepository } from '../../../domain/repositories/IUserRepository';
+import { IUserRepository, UserWithRelations, UserFilters } from '../../../domain/repositories/IUserRepository';
 import { UserEntity } from '../../../domain/entities/User';
 
 export class PrismaUserRepository implements IUserRepository {
@@ -117,6 +117,172 @@ export class PrismaUserRepository implements IUserRepository {
     const domainUser = this.toDomain(user);
     return {
       ...domainUser,
+      role: user.role,
+      department: user.department,
+    };
+  }
+
+  // Admin management methods
+  async findAllWithRelations(): Promise<UserWithRelations[]> {
+    const users = await this.prisma.user.findMany({
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return users.map(user => this.toUserWithRelations(user));
+  }
+
+  async findManyWithRelations(filters: UserFilters, limit?: number, offset?: number): Promise<UserWithRelations[]> {
+    const where: any = {};
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    if (filters.roleId) {
+      where.roleId = filters.roleId;
+    }
+
+    if (filters.departmentId) {
+      where.departmentId = filters.departmentId;
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: 'insensitive' } },
+        { email: { contains: filters.search, mode: 'insensitive' } },
+        { nip: { contains: filters.search, mode: 'insensitive' } }
+      ];
+    }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset
+    });
+
+    return users.map(user => this.toUserWithRelations(user));
+  }
+
+  async countMany(filters: UserFilters): Promise<number> {
+    const where: any = {};
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    if (filters.roleId) {
+      where.roleId = filters.roleId;
+    }
+
+    if (filters.departmentId) {
+      where.departmentId = filters.departmentId;
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: 'insensitive' } },
+        { email: { contains: filters.search, mode: 'insensitive' } },
+        { nip: { contains: filters.search, mode: 'insensitive' } }
+      ];
+    }
+
+    return await this.prisma.user.count({ where });
+  }
+
+  async findByDepartment(departmentId: string): Promise<UserWithRelations[]> {
+    const users = await this.prisma.user.findMany({
+      where: { departmentId },
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    return users.map(user => this.toUserWithRelations(user));
+  }
+
+  async findByRole(roleId: string): Promise<UserWithRelations[]> {
+    const users = await this.prisma.user.findMany({
+      where: { roleId },
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    return users.map(user => this.toUserWithRelations(user));
+  }
+
+  private toUserWithRelations(user: any): UserWithRelations {
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      nip: user.nip,
+      phone: user.phone,
+      status: user.status,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      lastLogin: user.lastLogin,
       role: user.role,
       department: user.department,
     };

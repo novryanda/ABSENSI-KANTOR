@@ -123,11 +123,16 @@ export interface ApprovalApiResponse extends ApiResponse {
 export interface CreateUserRequest {
   name: string
   email: string
-  nip?: string
+  nip: string
   phone?: string
+  birthDate?: string
+  gender?: 'MALE' | 'FEMALE'
+  address?: string
+  hireDate?: string
   departmentId?: string
   roleId?: string
-  password: string
+  generatePassword?: boolean
+  customPassword?: string
 }
 
 export interface UpdateUserRequest {
@@ -135,9 +140,35 @@ export interface UpdateUserRequest {
   email?: string
   nip?: string
   phone?: string
+  birthDate?: string
+  gender?: 'MALE' | 'FEMALE'
+  address?: string
+  hireDate?: string
   departmentId?: string
   roleId?: string
-  status?: string
+  status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+}
+
+export interface DeleteUserRequest {
+  soft?: boolean
+  reason?: string
+}
+
+export interface ResetPasswordRequest {
+  generatePassword?: boolean
+  customPassword?: string
+}
+
+export interface ToggleStatusResponse extends ApiResponse {
+  data?: {
+    newStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+  }
+}
+
+export interface ResetPasswordResponse extends ApiResponse {
+  data?: {
+    temporaryPassword?: string
+  }
 }
 
 export interface UserApiResponse extends ApiResponse {
@@ -149,6 +180,58 @@ export interface UserApiResponse extends ApiResponse {
     status: string
     role?: any
     department?: any
+    temporaryPassword?: string
+  }
+}
+
+export interface UsersListApiResponse extends ApiResponse {
+  data?: {
+    users: Array<{
+      id: string
+      name?: string
+      email: string
+      nip?: string
+      phone?: string
+      status: string
+      createdAt: string
+      updatedAt: string
+      lastLogin?: string
+      role?: {
+        id: string
+        name: string
+      }
+      department?: {
+        id: string
+        name: string
+        code: string
+      }
+    }>
+    pagination: {
+      page: number
+      limit: number
+      total: number
+      totalPages: number
+      hasNext: boolean
+      hasPrev: boolean
+    }
+  }
+}
+
+export interface RolesAndDepartmentsApiResponse extends ApiResponse {
+  data?: {
+    roles: Array<{
+      id: string
+      name: string
+      description?: string
+      isActive: boolean
+    }>
+    departments: Array<{
+      id: string
+      name: string
+      code: string
+      description?: string
+      isActive: boolean
+    }>
   }
 }
 

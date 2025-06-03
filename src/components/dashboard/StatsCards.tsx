@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AttendanceStats, RequestStats, TeamStats, CompanyStats } from '@/types/domain'
+import { formatWorkingHours } from '@/utils/dateUtils'
 
 interface StatsCardsProps {
   attendance?: AttendanceStats
@@ -75,8 +76,10 @@ export default function StatsCards({
         } : undefined
       },
       {
-        title: 'Jam Kerja Bulan Ini',
-        value: `${attendance.today.workingHours || 0}h`,
+        title: 'Jam Kerja Hari Ini',
+        value: attendance.today.workingHoursMinutes !== undefined
+          ? formatWorkingHours(attendance.today.workingHoursMinutes)
+          : (attendance.today.workingHours ? `${attendance.today.workingHours}h` : '0h 0m'),
         subtitle: `Target: ${attendance.monthly.totalWorkDays * 8}h`,
         icon: Timer,
         variant: 'info',

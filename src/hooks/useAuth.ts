@@ -105,14 +105,23 @@ export function useAuth() {
 
         const permissions = user.role.permissions as RolePermissions
 
-        // Super admin bypass
-        if (permissions.all === true) return true
+        // Super admin bypass - check for all permission or Super Admin role
+        if (permissions.all === true || user.role.name === 'Super Admin') return true
 
         // Check specific resource permission
-        const resourcePermissions = permissions[resource as keyof RolePermissions] as string[] | undefined
+        const resourcePermissions = permissions[resource as keyof RolePermissions]
 
-        return resourcePermissions?.includes(action) || false
-    }, [user?.role?.permissions])
+        // Handle different permission structures
+        if (Array.isArray(resourcePermissions)) {
+            // Legacy array format: ['create', 'read', 'update', 'delete']
+            return resourcePermissions.includes(action)
+        } else if (typeof resourcePermissions === 'object' && resourcePermissions !== null) {
+            // New object format: { create: true, read: true, update: false, delete: false }
+            return resourcePermissions[action as keyof typeof resourcePermissions] === true
+        }
+
+        return false
+    }, [user?.role?.permissions, user?.role?.name])
 
     // Check if user can access department
     const canAccessDepartment = useCallback((departmentId: string) => {

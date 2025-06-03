@@ -27,7 +27,8 @@ export interface TodayAttendance {
   status: 'not_checked_in' | 'checked_in' | 'checked_out' | 'absent'
   checkInTime?: Date
   checkOutTime?: Date
-  workingHours?: number
+  workingHours?: number // Deprecated: use workingHoursMinutes instead
+  workingHoursMinutes?: number // Working hours in minutes for precise calculation
   isLate?: boolean
   location?: {
     latitude: number
@@ -50,7 +51,8 @@ export interface AttendanceTrend {
   status: AttendanceStatus
   checkInTime?: Date
   checkOutTime?: Date
-  workingHours?: number
+  workingHours?: number // Deprecated: use workingHoursMinutes instead
+  workingHoursMinutes?: number // Working hours in minutes for precise calculation
 }
 
 export interface RequestStats {

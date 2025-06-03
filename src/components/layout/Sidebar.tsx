@@ -141,6 +141,12 @@ export default function Sidebar({ className, onClose, isOpen }: SidebarProps) {
                     show: hasPermission('departments', 'read')
                 },
                 {
+                    title: 'Lokasi Kantor',
+                    href: '/admin/office-locations',
+                    current: pathname.startsWith('/admin/office-locations'),
+                    show: hasRole(['Super Admin']) // Only Super Admin can manage office locations
+                },
+                {
                     title: 'Role & Permission',
                     href: '/admin/roles',
                     current: pathname === '/admin/roles',

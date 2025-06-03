@@ -145,7 +145,8 @@ export class GetDashboardStats {
       status,
       checkInTime: attendance.checkInTime,
       checkOutTime: attendance.checkOutTime,
-      workingHours: attendance.workingHours,
+      workingHours: attendance.workingHours, // Deprecated field for backward compatibility
+      workingHoursMinutes: attendance.workingHoursMinutes || 0,
       isLate: attendance.isLate,
       location: attendance.latitude && attendance.longitude ? {
         latitude: attendance.latitude,
@@ -174,13 +175,16 @@ export class GetDashboardStats {
   }
 
   private buildAttendanceTrend(attendances: any[]): AttendanceTrend[] {
-    return attendances.map(attendance => ({
-      date: attendance.date,
-      status: attendance.status,
-      checkInTime: attendance.checkInTime,
-      checkOutTime: attendance.checkOutTime,
-      workingHours: attendance.workingHours
-    }))
+    return attendances
+      .filter(attendance => attendance && attendance.attendanceDate) // Filter out invalid records
+      .map(attendance => ({
+        date: attendance.attendanceDate, // Use correct field name
+        status: attendance.status,
+        checkInTime: attendance.checkInTime,
+        checkOutTime: attendance.checkOutTime,
+        workingHours: attendance.workingHoursMinutes ? Math.round(attendance.workingHoursMinutes / 60 * 100) / 100 : 0, // Convert minutes to hours for backward compatibility
+        workingHoursMinutes: attendance.workingHoursMinutes || 0 // Include minutes for precise calculation
+      }))
   }
 
   private async getRequestStats(userId: string): Promise<RequestStats> {

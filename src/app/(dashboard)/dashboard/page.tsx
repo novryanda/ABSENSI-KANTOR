@@ -117,11 +117,30 @@ export default function DashboardPage() {
         throw new Error(result.error || 'Gagal melakukan check-in')
       }
 
-      toast({
-        title: 'Berhasil',
-        description: 'Check-in berhasil dicatat',
-        variant: 'default'
-      })
+      // Show detailed location validation feedback
+      const locationValidation = result.data?.locationValidation
+      if (locationValidation) {
+        if (locationValidation.isValid) {
+          toast({
+            title: 'Check-in Berhasil',
+            description: locationValidation.message || 'Check-in berhasil dicatat',
+            variant: 'default'
+          })
+        } else {
+          // Still successful but with location warning
+          toast({
+            title: 'Check-in Berhasil (Peringatan Lokasi)',
+            description: locationValidation.message || 'Check-in dicatat namun lokasi di luar radius yang diizinkan',
+            variant: 'default'
+          })
+        }
+      } else {
+        toast({
+          title: 'Berhasil',
+          description: 'Check-in berhasil dicatat',
+          variant: 'default'
+        })
+      }
 
       // Refresh dashboard data
       fetchDashboardData(true)
@@ -138,11 +157,34 @@ export default function DashboardPage() {
   // Handle check-out
   const handleCheckOut = async () => {
     try {
+      // Get user location for check-out validation
+      let latitude, longitude
+      if (navigator.geolocation) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 60000
+            })
+          })
+          latitude = position.coords.latitude
+          longitude = position.coords.longitude
+        } catch (locationError) {
+          console.warn('Could not get location for check-out:', locationError)
+          // Continue without location validation
+        }
+      }
+
       const response = await fetch('/api/attendance/check-out', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          latitude,
+          longitude
+        })
       })
 
       const result = await response.json()
@@ -151,9 +193,22 @@ export default function DashboardPage() {
         throw new Error(result.error || 'Gagal melakukan check-out')
       }
 
+      // Show detailed feedback with working hours
+      const workingHours = result.data?.workingHours
+      const locationValidation = result.data?.locationValidation
+
+      let description = `Check-out berhasil dicatat`
+      if (workingHours) {
+        description += `. Jam kerja: ${workingHours}`
+      }
+
+      if (locationValidation && !locationValidation.isValid) {
+        description += ` (Peringatan: lokasi di luar radius yang diizinkan)`
+      }
+
       toast({
-        title: 'Berhasil',
-        description: 'Check-out berhasil dicatat',
+        title: 'Check-out Berhasil',
+        description,
         variant: 'default'
       })
 

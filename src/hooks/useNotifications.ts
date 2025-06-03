@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from './useAuth'
 import { Tables } from '@/types/database.types'
+import { logError, logWarn, logInfo, logEventSourceError } from '@/utils/errorLogger'
 
 type NotificationData = Tables<'notifications'> & {
     isNew?: boolean
@@ -11,10 +12,21 @@ interface UseNotificationsReturn {
     unreadCount: number
     isLoading: boolean
     error: string | null
+    connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error'
     markAsRead: (notificationIds: string[]) => Promise<void>
     markAllAsRead: () => Promise<void>
     deleteNotification: (notificationId: string) => Promise<void>
     refreshNotifications: () => Promise<void>
+    reconnect: () => void
+}
+
+// Connection configuration
+const SSE_CONFIG = {
+    maxRetries: 5,
+    baseRetryDelay: 1000, // 1 second
+    maxRetryDelay: 30000, // 30 seconds
+    heartbeatTimeout: 45000, // 45 seconds
+    connectionTimeout: 10000 // 10 seconds
 }
 
 export function useNotifications(): UseNotificationsReturn {
@@ -23,6 +35,14 @@ export function useNotifications(): UseNotificationsReturn {
     const [unreadCount, setUnreadCount] = useState(0)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
+
+    // Refs for managing connections and retries
+    const eventSourceRef = useRef<EventSource | null>(null)
+    const retryCountRef = useRef(0)
+    const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const isManualDisconnectRef = useRef(false)
 
     // Fetch notifications from API
     const fetchNotifications = useCallback(async () => {
@@ -190,24 +210,81 @@ export function useNotifications(): UseNotificationsReturn {
         return () => clearInterval(interval)
     }, [user?.id, fetchNotifications])
 
-    // Set up real-time notifications using Server-Sent Events or WebSocket
-    useEffect(() => {
-        if (!user?.id) return
+    // Enhanced SSE connection with retry logic
+    const connectSSE = useCallback(() => {
+        if (!user?.id || isManualDisconnectRef.current) return
 
-        // For simplicity, we'll use polling, but in production you might want to use:
-        // - Server-Sent Events (SSE)
-        // - WebSocket connection
-        // - Supabase real-time subscriptions
+        // Clean up existing connection
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close()
+            eventSourceRef.current = null
+        }
 
-        let eventSource: EventSource | null = null
+        // Clear existing timeouts
+        if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current)
+            retryTimeoutRef.current = null
+        }
+        if (heartbeatTimeoutRef.current) {
+            clearTimeout(heartbeatTimeoutRef.current)
+            heartbeatTimeoutRef.current = null
+        }
 
-        if (typeof window !== 'undefined' && 'EventSource' in window) {
-            try {
-                eventSource = new EventSource(`/api/notifications/stream?userId=${user.id}`)
+        setConnectionStatus('connecting')
+        setError(null)
 
-                eventSource.onmessage = (event) => {
-                    try {
-                        const notification = JSON.parse(event.data)
+        try {
+            console.log(`🔗 Attempting SSE connection (attempt ${retryCountRef.current + 1})`)
+
+            const eventSource = new EventSource(`/api/notifications/stream?userId=${user.id}`)
+            eventSourceRef.current = eventSource
+
+            // Connection timeout
+            const connectionTimeout = setTimeout(() => {
+                if (eventSource.readyState === EventSource.CONNECTING) {
+                    console.warn('⏰ SSE connection timeout')
+                    eventSource.close()
+                    handleConnectionError('Connection timeout')
+                }
+            }, SSE_CONFIG.connectionTimeout)
+
+            eventSource.onopen = () => {
+                clearTimeout(connectionTimeout)
+                setConnectionStatus('connected')
+                setError(null)
+                retryCountRef.current = 0
+
+                logInfo('SSE connection established successfully', {
+                    userId: user.id,
+                    component: 'useNotifications',
+                    action: 'SSE_connected',
+                    url: eventSource.url
+                })
+
+                // Set up heartbeat timeout
+                resetHeartbeatTimeout()
+            }
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data)
+
+                    // Reset heartbeat timeout on any message
+                    resetHeartbeatTimeout()
+
+                    if (data.type === 'heartbeat') {
+                        // Just reset the timeout, no other action needed
+                        return
+                    }
+
+                    if (data.type === 'connection') {
+                        console.log('📡 SSE connection confirmed:', data.message)
+                        return
+                    }
+
+                    if (data.type === 'notification' && data.data) {
+                        const notification = data.data
+                        console.log('📨 Received notification via SSE:', notification.id)
 
                         // Add new notification to the list
                         setNotifications(prev => [{ ...notification, isNew: true }, ...prev])
@@ -221,34 +298,164 @@ export function useNotifications(): UseNotificationsReturn {
                                 tag: notification.id
                             })
                         }
-                    } catch (err) {
-                        console.error('Error parsing notification:', err)
                     }
+                } catch (err) {
+                    console.error('❌ Error parsing SSE message:', err)
                 }
-
-                eventSource.onerror = (error) => {
-                    console.error('EventSource error:', error)
-                    eventSource?.close()
-                }
-            } catch (err) {
-                console.error('Error setting up EventSource:', err)
             }
-        }
 
-        return () => {
-            eventSource?.close()
+            eventSource.onerror = (event) => {
+                clearTimeout(connectionTimeout)
+
+                // Enhanced error logging
+                const errorId = logEventSourceError(eventSource, event, {
+                    userId: user.id,
+                    component: 'useNotifications',
+                    action: 'SSE_connection',
+                    retryCount: retryCountRef.current
+                })
+
+                // Provide more detailed error information
+                let errorMessage = 'Connection failed'
+                switch (eventSource.readyState) {
+                    case EventSource.CONNECTING:
+                        errorMessage = 'Failed to establish connection'
+                        break
+                    case EventSource.CLOSED:
+                        errorMessage = 'Connection was closed'
+                        break
+                    default:
+                        errorMessage = 'Unknown connection error'
+                }
+
+                logWarn(`SSE Error Details: ${errorMessage}`, {
+                    userId: user.id,
+                    errorId,
+                    readyState: eventSource.readyState,
+                    url: eventSource.url
+                })
+
+                handleConnectionError(errorMessage)
+            }
+
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error('Failed to create connection')
+            logError('Failed to create EventSource', error, {
+                userId: user.id,
+                component: 'useNotifications',
+                action: 'create_EventSource',
+                retryCount: retryCountRef.current
+            })
+            handleConnectionError(error.message)
         }
     }, [user?.id])
+
+    // Handle connection errors with retry logic
+    const handleConnectionError = useCallback((errorMessage: string) => {
+        setConnectionStatus('error')
+        setError(errorMessage)
+
+        if (heartbeatTimeoutRef.current) {
+            clearTimeout(heartbeatTimeoutRef.current)
+            heartbeatTimeoutRef.current = null
+        }
+
+        if (retryCountRef.current < SSE_CONFIG.maxRetries && !isManualDisconnectRef.current) {
+            const retryDelay = Math.min(
+                SSE_CONFIG.baseRetryDelay * Math.pow(2, retryCountRef.current),
+                SSE_CONFIG.maxRetryDelay
+            )
+
+            console.log(`🔄 Retrying SSE connection in ${retryDelay}ms (attempt ${retryCountRef.current + 1}/${SSE_CONFIG.maxRetries})`)
+
+            retryTimeoutRef.current = setTimeout(() => {
+                retryCountRef.current++
+                connectSSE()
+            }, retryDelay)
+        } else {
+            console.warn('❌ Max retry attempts reached or manual disconnect, falling back to polling')
+            setConnectionStatus('disconnected')
+            // Fallback to polling will be handled by the existing polling effect
+        }
+    }, [connectSSE])
+
+    // Reset heartbeat timeout
+    const resetHeartbeatTimeout = useCallback(() => {
+        if (heartbeatTimeoutRef.current) {
+            clearTimeout(heartbeatTimeoutRef.current)
+        }
+
+        heartbeatTimeoutRef.current = setTimeout(() => {
+            console.warn('💔 SSE heartbeat timeout')
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close()
+                handleConnectionError('Heartbeat timeout')
+            }
+        }, SSE_CONFIG.heartbeatTimeout)
+    }, [handleConnectionError])
+
+    // Manual reconnect function
+    const reconnect = useCallback(() => {
+        console.log('🔄 Manual reconnect requested')
+        isManualDisconnectRef.current = false
+        retryCountRef.current = 0
+        connectSSE()
+    }, [connectSSE])
+
+    // Disconnect function
+    const disconnect = useCallback(() => {
+        console.log('🔌 Disconnecting SSE')
+        isManualDisconnectRef.current = true
+
+        if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current)
+            retryTimeoutRef.current = null
+        }
+
+        if (heartbeatTimeoutRef.current) {
+            clearTimeout(heartbeatTimeoutRef.current)
+            heartbeatTimeoutRef.current = null
+        }
+
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close()
+            eventSourceRef.current = null
+        }
+
+        setConnectionStatus('disconnected')
+    }, [])
+
+    // Set up SSE connection
+    useEffect(() => {
+        if (!user?.id) {
+            disconnect()
+            return
+        }
+
+        // Check if SSE is supported
+        if (typeof window === 'undefined' || !('EventSource' in window)) {
+            console.warn('⚠️ EventSource not supported, using polling only')
+            setConnectionStatus('disconnected')
+            return
+        }
+
+        isManualDisconnectRef.current = false
+        connectSSE()
+
+        return disconnect
+    }, [user?.id, connectSSE, disconnect])
 
     return {
         notifications,
         unreadCount,
         isLoading,
         error,
+        connectionStatus,
         markAsRead,
         markAllAsRead,
         deleteNotification,
-        refreshNotifications
+        refreshNotifications,
+        reconnect
     }
 }
 
