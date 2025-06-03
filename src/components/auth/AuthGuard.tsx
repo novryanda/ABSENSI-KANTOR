@@ -1,9 +1,9 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { ReactNode, useEffect, useState } from 'react'
 import { RolePermissions } from '@/types/auth'
+import { useAuthNavigation } from '@/hooks/useClientNavigation'
 
 // ============================================================================
 // AUTH GUARD - Requires Authentication
@@ -21,27 +21,54 @@ export function AuthGuard({
                               redirectTo = '/auth/signin'
                           }: AuthGuardProps) {
     const { data: session, status } = useSession()
-    const router = useRouter()
+    const { redirectToLogin, redirectToInactive, isNavigating } = useAuthNavigation()
+    const [hasRedirected, setHasRedirected] = useState(false)
 
+    // Handle unauthenticated users
     useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push(`${redirectTo}?callbackUrl=${encodeURIComponent(window.location.pathname)}`)
+        if (status === 'unauthenticated' && !hasRedirected && !isNavigating) {
+            setHasRedirected(true)
+            redirectToLogin()
         }
-    }, [status, router, redirectTo])
+    }, [status, hasRedirected, isNavigating, redirectToLogin])
 
-    if (status === 'loading') {
+    // Handle inactive users
+    useEffect(() => {
+        if (status === 'authenticated' && !hasRedirected && !isNavigating) {
+            const userStatus = session?.user?.status
+
+            // Check for various inactive states
+            if (userStatus !== 'ACTIVE' && userStatus !== 'active') {
+                setHasRedirected(true)
+                redirectToInactive()
+            }
+        }
+    }, [status, session?.user?.status, hasRedirected, isNavigating, redirectToInactive])
+
+    // Reset redirect state when status changes to loading
+    useEffect(() => {
+        if (status === 'loading') {
+            setHasRedirected(false)
+        }
+    }, [status])
+
+    // Show loading state
+    if (status === 'loading' || isNavigating || hasRedirected) {
         return <>{fallback}</>
     }
 
+    // Show loading while redirecting unauthenticated users
     if (status === 'unauthenticated') {
         return <>{fallback}</>
     }
 
-    if (session?.user?.status !== 'active') {
-        router.push('/auth/error?error=AccountInactive')
+    // Check user status (handle both ACTIVE and active for compatibility)
+    const userStatus = session?.user?.status
+    if (userStatus !== 'ACTIVE' && userStatus !== 'active') {
         return <>{fallback}</>
     }
 
+    // User is authenticated and active
     return <>{children}</>
 }
 
@@ -63,9 +90,31 @@ export function RoleGuard({
                               redirectTo
                           }: RoleGuardProps) {
     const { data: session, status } = useSession()
-    const router = useRouter()
+    const { redirectToUnauthorized, isNavigating } = useAuthNavigation()
+    const [hasRedirected, setHasRedirected] = useState(false)
 
-    if (status === 'loading') {
+    // Handle unauthorized access
+    useEffect(() => {
+        if (status === 'authenticated' && !hasRedirected && !isNavigating) {
+            const userRole = session?.user?.role?.name
+
+            if (!userRole || !allowedRoles.includes(userRole)) {
+                if (redirectTo) {
+                    setHasRedirected(true)
+                    redirectToUnauthorized(`Role ${userRole} is not authorized for this page`)
+                }
+            }
+        }
+    }, [status, session?.user?.role?.name, allowedRoles, redirectTo, hasRedirected, isNavigating, redirectToUnauthorized])
+
+    // Reset redirect state when status changes to loading
+    useEffect(() => {
+        if (status === 'loading') {
+            setHasRedirected(false)
+        }
+    }, [status])
+
+    if (status === 'loading' || isNavigating || hasRedirected) {
         return <AuthLoadingSpinner />
     }
 
@@ -76,8 +125,7 @@ export function RoleGuard({
     const userRole = session?.user?.role?.name
 
     if (!userRole || !allowedRoles.includes(userRole)) {
-        if (redirectTo) {
-            router.push(`${redirectTo}?error=Unauthorized`)
+        if (redirectTo && !hasRedirected) {
             return <AuthLoadingSpinner />
         }
         return <>{fallback}</>
@@ -106,9 +154,29 @@ export function PermissionGuard({
                                     redirectTo
                                 }: PermissionGuardProps) {
     const { data: session, status } = useSession()
-    const router = useRouter()
+    const { redirectToUnauthorized, isNavigating } = useAuthNavigation()
+    const [hasRedirected, setHasRedirected] = useState(false)
 
-    if (status === 'loading') {
+    // Handle unauthorized access
+    useEffect(() => {
+        if (status === 'authenticated' && !hasRedirected && !isNavigating) {
+            const hasPermission = checkUserPermission(session?.user?.role?.permissions, resource, action)
+
+            if (!hasPermission && redirectTo) {
+                setHasRedirected(true)
+                redirectToUnauthorized(`Permission denied for ${resource}:${action}`)
+            }
+        }
+    }, [status, session?.user?.role?.permissions, resource, action, redirectTo, hasRedirected, isNavigating, redirectToUnauthorized])
+
+    // Reset redirect state when status changes to loading
+    useEffect(() => {
+        if (status === 'loading') {
+            setHasRedirected(false)
+        }
+    }, [status])
+
+    if (status === 'loading' || isNavigating || hasRedirected) {
         return <AuthLoadingSpinner />
     }
 
@@ -119,8 +187,7 @@ export function PermissionGuard({
     const hasPermission = checkUserPermission(session?.user?.role?.permissions, resource, action)
 
     if (!hasPermission) {
-        if (redirectTo) {
-            router.push(`${redirectTo}?error=Unauthorized`)
+        if (redirectTo && !hasRedirected) {
             return <AuthLoadingSpinner />
         }
         return <>{fallback}</>
@@ -191,17 +258,30 @@ export function GuestGuard({
                                redirectTo = '/dashboard'
                            }: GuestGuardProps) {
     const { data: session, status } = useSession()
-    const router = useRouter()
+    const { redirectToDashboard, isNavigating, navigateTo } = useAuthNavigation()
+    const [hasRedirected, setHasRedirected] = useState(false)
 
     useEffect(() => {
-        if (status === 'authenticated') {
+        if (status === 'authenticated' && !hasRedirected && !isNavigating) {
+            setHasRedirected(true)
             const userRole = session?.user?.role?.name
-            const defaultRedirect = getDefaultRedirectForRole(userRole)
-            router.push(redirectTo === '/dashboard' ? defaultRedirect : redirectTo)
-        }
-    }, [status, session, router, redirectTo])
 
-    if (status === 'loading') {
+            if (redirectTo === '/dashboard') {
+                redirectToDashboard(userRole)
+            } else {
+                navigateTo(redirectTo)
+            }
+        }
+    }, [status, session, redirectTo, hasRedirected, isNavigating, redirectToDashboard, navigateTo])
+
+    // Reset redirecting state when status changes to loading
+    useEffect(() => {
+        if (status === 'loading') {
+            setHasRedirected(false)
+        }
+    }, [status])
+
+    if (status === 'loading' || isNavigating || hasRedirected) {
         return <AuthLoadingSpinner />
     }
 

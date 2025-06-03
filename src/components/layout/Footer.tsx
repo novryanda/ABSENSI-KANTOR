@@ -14,11 +14,11 @@ export default function Footer() {
     const currentYear = new Date().getFullYear()
 
     return (
-        <footer className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="container mx-auto px-4 py-8">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <footer className="border-t bg-white">
+            <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 lg:gap-8">
                     {/* Brand & Description */}
-                    <div className="space-y-4">
+                    <div className="space-y-3 md:space-y-4">
                         <div className="flex items-center space-x-2">
                             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                                 <Building2 className="h-5 w-5 text-primary-foreground" />
@@ -28,7 +28,7 @@ export default function Footer() {
                                 <p className="text-xs text-muted-foreground">Kantor Pemerintahan</p>
                             </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
                             Sistem manajemen absensi dan pengajuan surat digital untuk meningkatkan
                             efisiensi administrasi kepegawaian.
                         </p>
@@ -138,10 +138,10 @@ export default function Footer() {
                     </div>
                 </div>
 
-                <Separator className="my-6" />
+                <Separator className="my-4 lg:my-6" />
 
                 {/* Bottom Footer */}
-                <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+                <div className="flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0">
                     <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4">
                         <p className="text-sm text-muted-foreground">
                             © {currentYear} Kantor Pemerintahan. Semua hak dilindungi.
