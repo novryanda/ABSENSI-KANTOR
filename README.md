@@ -37,8 +37,7 @@ GeoAttendance adalah sistem absensi modern berbasis web yang memverifikasi kehad
 
 1. Klon repositori
 ```bash
-[git clone https://github.com/username-anda/geoattendance.git](https://github.com/novryanda/ABSENSI-KANTOR.git)
-cd geoattendance
+https://github.com/novryanda/ABSENSI-KANTOR.git
 ```
 
 2. Instal dependensi
@@ -51,7 +50,7 @@ yarn install
 3. Siapkan variabel lingkungan
 Buat file `.env.local` di direktori root dengan variabel berikut:
 ```
-DATABASE_URL="postgresql://username:password@localhost:5432/geoattendance"
+DATABASE_URL="postgresql://username:password@localhost:5432/absensi-kantor"
 NEXTAUTH_SECRET=secret_nextauth_anda
 NEXTAUTH_URL=http://localhost:3000
 ```
