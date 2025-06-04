@@ -37,7 +37,7 @@ GeoAttendance adalah sistem absensi modern berbasis web yang memverifikasi kehad
 
 1. Klon repositori
 ```bash
-git clone https://github.com/username-anda/geoattendance.git
+[git clone https://github.com/username-anda/geoattendance.git](https://github.com/novryanda/ABSENSI-KANTOR.git)
 cd geoattendance
 ```
 
