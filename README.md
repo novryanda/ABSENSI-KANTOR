@@ -141,13 +141,11 @@ bun dev
 
 Kontribusi sangat diterima! Silakan kirimkan Pull Request.
 
-## 📄 Lisensi
 
-Proyek ini dilisensikan di bawah Lisensi MIT - lihat file LICENSE untuk detailnya.
 
 ## 📞 Dukungan
 
-Untuk mendapatkan dukungan, kirim email ke support@geoattendance.com atau buat isu di repositori.
+Untuk mendapatkan dukungan, kirim email ke novryandareza0@gmail.com atau buat isu di repositori.
 
 ---
 
