@@ -1,36 +1,156 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📍 GeoAttendance - Sistem Absensi Berbasis Lokasi
 
-## Getting Started
+![Banner GeoAttendance](https://via.placeholder.com/800x200?text=Sistem+GeoAttendance)
 
-First, run the development server:
+## 📋 Ringkasan
 
+GeoAttendance adalah sistem absensi modern berbasis web yang memverifikasi kehadiran pengguna berdasarkan lokasi geografis mereka. Sistem ini menggunakan koordinat GPS untuk memastikan pengguna benar-benar hadir di lokasi yang ditentukan saat menandai kehadiran, menjadikannya ideal untuk sekolah, kantor, acara, dan operasi lapangan.
+
+## ✨ Fitur Utama
+
+- **📱 Antarmuka Ramah Seluler**: Desain responsif yang berfungsi dengan mulus di berbagai perangkat
+- **🗺️ Verifikasi Geolokasi**: Validasi kehadiran berdasarkan koordinat GPS yang tepat
+- **🔒 Autentikasi Aman**: Autentikasi multi-faktor untuk mencegah kecurangan absensi
+- **💼 Manajemen Organisasi**: Buat dan kelola beberapa lokasi untuk organisasi Anda
+- **👥 Peran & Izin Pengguna**: Kontrol akses tingkat admin, manajer, dan pengguna
+- **📊 Pelaporan & Analitik**: Laporan kehadiran dan wawasan komprehensif
+- **🔔 Notifikasi**: Peringatan real-time untuk check-in yang berhasil/gagal
+- **🔄 Dukungan Offline**: Antrean check-in saat masalah konektivitas
+
+## 🛠️ Teknologi yang Digunakan
+
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Backend**: Node.js, Express
+- **Database**: PostgreSQL
+- **Autentikasi**: JWT, NextAuth.js
+- **Geolokasi**: API Geolokasi Browser
+- **Deployment**: Vercel
+
+## 🚀 Memulai
+
+### Prasyarat
+
+- Node.js 18.x atau lebih baru
+- Package manager npm atau yarn
+- PostgreSQL (lokal atau hosting)
+
+### Instalasi
+
+1. Klon repositori
+```bash
+git clone https://github.com/username-anda/geoattendance.git
+cd geoattendance
+```
+
+2. Instal dependensi
+```bash
+npm install
+# atau
+yarn install
+```
+
+3. Siapkan variabel lingkungan
+Buat file `.env.local` di direktori root dengan variabel berikut:
+```
+DATABASE_URL="postgresql://username:password@localhost:5432/geoattendance"
+NEXTAUTH_SECRET=secret_nextauth_anda
+NEXTAUTH_URL=http://localhost:3000
+```
+
+4. Jalankan server pengembangan
 ```bash
 npm run dev
-# or
+# atau
 yarn dev
-# or
+# atau
 pnpm dev
-# or
+# atau
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Buka [http://localhost:3000](http://localhost:3000) dengan browser Anda untuk melihat aplikasi.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📱 Panduan Penggunaan
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Untuk Administrator
 
-## Learn More
+1. **Pengaturan Organisasi**: Tetapkan organisasi Anda dan buat batas lokasi
+2. **Kelola Pengguna**: Tambahkan pengguna dan tetapkan peran yang sesuai
+3. **Konfigurasi Aturan Check-in**: Tetapkan jadwal kehadiran dan parameter lokasi
+4. **Pantau Kehadiran**: Lihat data kehadiran real-time dan hasilkan laporan
 
-To learn more about Next.js, take a look at the following resources:
+### Untuk Pengguna
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Login**: Akses sistem menggunakan kredensial Anda
+2. **Aktifkan Lokasi**: Izinkan akses lokasi saat diminta
+3. **Check-in**: Ketuk tombol check-in saat berada di lokasi yang ditentukan
+4. **Lihat Riwayat**: Akses riwayat kehadiran pribadi Anda
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🔍 Cara Kerja
 
-## Deploy on Vercel
+1. **Penentuan Lokasi**: Admin menentukan area check-in yang valid dengan menetapkan batas koordinat
+2. **Verifikasi Lokasi**: Saat check-in, sistem membandingkan koordinat pengguna saat ini dengan batas yang ditentukan
+3. **Pencatatan Kehadiran**: Check-in yang valid dicatat dengan data stempel waktu dan lokasi
+4. **Analisis Data**: Sistem memproses data kehadiran untuk menghasilkan wawasan dan laporan
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📁 Struktur Proyek
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+/
+├── prisma/                 # Skema Prisma dan file migrasi
+│   ├── schema.prisma
+│   └── migrations/
+├── src/
+│   ├── app/                # Routing dan komponen UI (App Router Next.js)
+│   │   ├── api/
+│   │   │   └── auth/       # API Routes untuk autentikasi
+│   │   │       └── [...nextauth]/route.ts
+│   │   └── page.tsx        # Halaman utama
+│   ├── components/         # Komponen UI yang dapat digunakan kembali
+│   ├── domain/             # Entitas dan antarmuka (Entities)
+│   │   └── user.ts
+│   ├── use-cases/          # Logika bisnis (Use Cases)
+│   │   └── user/
+│   │       └── createUser.ts
+│   ├── infrastructure/     # Implementasi detail seperti Prisma Client
+│   │   ├── prismaClient.ts
+│   │   └── auth/           # Konfigurasi NextAuth.js
+│   │       └── authOptions.ts
+│   ├── services/           # Layanan eksternal atau utilitas
+│   ├── utils/              # Fungsi utilitas umum
+│   └── types/              # Tipe TypeScript global
+├── .env                    # Variabel lingkungan
+├── next.config.js          # Konfigurasi Next.js
+├── package.json
+└── tsconfig.json
+```
+
+## 🔐 Pertimbangan Keamanan
+
+- Enkripsi transmisi data lokasi
+- Pencegahan pemalsuan GPS melalui metode verifikasi tambahan
+- Kepatuhan privasi data dengan regulasi terkait
+- Audit keamanan dan pembaruan rutin
+
+## 📈 Pengembangan Mendatang
+
+- Integrasi dengan API Google Maps untuk visualisasi lokasi yang lebih baik
+- Pengembangan fitur geofencing yang lebih canggih
+- Optimalisasi untuk penggunaan baterai yang lebih efisien
+- Dukungan untuk perangkat dengan iOS dan Android
+
+## 🤝 Kontribusi
+
+Kontribusi sangat diterima! Silakan kirimkan Pull Request.
+
+## 📄 Lisensi
+
+Proyek ini dilisensikan di bawah Lisensi MIT - lihat file LICENSE untuk detailnya.
+
+## 📞 Dukungan
+
+Untuk mendapatkan dukungan, kirim email ke support@geoattendance.com atau buat isu di repositori.
+
+---
+
+Dibuat dengan ❤️ menggunakan Next.js
