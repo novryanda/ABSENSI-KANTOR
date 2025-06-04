@@ -1,6 +1,5 @@
 # 📍 GeoAttendance - Sistem Absensi Berbasis Lokasi
 
-![Banner GeoAttendance](https://via.placeholder.com/800x200?text=Sistem+GeoAttendance)
 
 ## 📋 Ringkasan
 
